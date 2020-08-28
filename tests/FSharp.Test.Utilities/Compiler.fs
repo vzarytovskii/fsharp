@@ -15,6 +15,10 @@ open System.IO
 
 module rec Compiler =
 
+    type Baseline =
+        { OutputBaseline: string option
+          ILBaseline:     string option }
+
     type TestType =
         | Text of string
         | Path of string
@@ -27,6 +31,7 @@ module rec Compiler =
 
     type FSharpCompilationSource =
         { Source:         TestType
+          Baseline:       Basline option
           Options:        string list
           OutputType:     CompileOutput
           SourceKind:     SourceKind
@@ -51,10 +56,10 @@ module rec Compiler =
     type Col = Col of int
 
     type Range =
-          { StartLine:   int
-            StartColumn: int
-            EndLine:     int
-            EndColumn:   int }
+        { StartLine:   int
+          StartColumn: int
+          EndLine:     int
+          EndColumn:   int }
 
     type ErrorInfo =
         { Error:   ErrorType
@@ -67,7 +72,8 @@ module rec Compiler =
           StdErr:   string }
 
     type Output =
-        { OutputPath:   string option
+        { Compilation:  CompilationUnit
+          OutputPath:   string option
           Dependencies: string list
           Adjust:       int
           Errors:       ErrorInfo list
@@ -116,8 +122,8 @@ module rec Compiler =
 
             let error = if severity = FSharpErrorSeverity.Warning then Warning errorNumber else Error errorNumber
 
-            { Error   = error
-              Range   =
+            { Error = error
+              Range =
                   { StartLine   = e.StartLineAlternate
                     StartColumn = e.StartColumn
                     EndLine     = e.EndLineAlternate
@@ -606,4 +612,8 @@ module rec Compiler =
                 | None -> failwith "Operation didn't produce any output!"
                 | Some p -> ILChecker.checkIL p il
             | Failure _ -> failwith "Result should be \"Success\" in order to get IL."
+
+        let checkBaseline = ignore
+        let checkILBaseline = ignore
+        let checkBaselines = ignore
 

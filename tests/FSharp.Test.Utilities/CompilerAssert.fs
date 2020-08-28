@@ -458,7 +458,6 @@ let main argv = 0"""
 
         (exitCode, output, errors)
 
-
     static member CompileWithErrors(cmpl: Compilation, expectedErrors, ?ignoreWarnings) =
         let ignoreWarnings = defaultArg ignoreWarnings false
         lock gate (fun () ->

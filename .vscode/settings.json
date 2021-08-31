@@ -1,7 +1,8 @@
 {
+    // TODO: Add setting for adding the ".dotnet" folder to the path (and DOTNET_ROOT, maybe?).
     "editor.trimAutoWhitespace": false,
     "files.trimTrailingWhitespace": false,
     "FSharp.suggestGitignore": false,
-    "FSharp.workspacePath": "FSharp.sln",
-    "dotnet-test-explorer.testProjectPath": "tests/*Tests/"
+    "FSharp.workspacePath": "./FSharp.sln",
+    "dotnet-test-explorer.testProjectPath": "./tests/*Tests/"
 }

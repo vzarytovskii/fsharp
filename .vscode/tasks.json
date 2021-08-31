@@ -1,0 +1,44 @@
+{
+    "version": "2.0.0",
+    "presentation": {
+        "reveal": "always",
+        "echo": true,
+        "focus": false
+    },
+    "tasks": [
+        {
+            "label": "Build (Debug)",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "command": "Build.cmd",
+            "args": [
+                "-c Debug"
+            ],
+            "windows": {
+                "command": "Build.cmd",
+                "args": [
+                    "-c Debug"
+                ]
+            },
+            "linux": {
+                "command": "build.sh",
+                "args": [
+                    "-c Debug"
+                ]
+            },
+            "osx": {
+                "command": "build.sh",
+                "args": [
+                    "-c Debug"
+                ]
+            },
+            "isBuildCommand": true,
+            "type": "process",
+            "problemMatcher": [
+                "$msCompile"
+            ]
+        }
+    ]
+}

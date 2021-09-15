@@ -1849,43 +1849,48 @@ let isRefTy g ty =
 let isForallFunctionTy g ty =
     let _, tau = tryDestForallTy g ty
     isFunTy g tau
-
-// ECMA C# LANGUAGE SPECIFICATION, 27.2
+    
 // An unmanaged-type is any type that isn't a reference-type, a type-parameter, or a generic struct-type and
 // contains no fields whose type is not an unmanaged-type. In other words, an unmanaged-type is one of the
 // following:
 // - sbyte, byte, short, ushort, int, uint, long, ulong, char, float, double, decimal, or bool.
 // - Any enum-type.
 // - Any pointer-type.
-// - Any non-generic user-defined struct-type that contains fields of unmanaged-types only.
-// [Note: Constructed types and type-parameters are never unmanaged-types. end note]
+// - Any generic user-defined struct-type that can be statically determined to be 'unmanaged' at construction.
 let rec isUnmanagedTy g ty =
     let ty = stripTyEqnsAndMeasureEqns g ty
-    match tryTcrefOfAppTy g ty with
-    | ValueSome tcref ->
-        let isEq tcref2 = tyconRefEq g tcref tcref2 
-        if isEq g.nativeptr_tcr || isEq g.nativeint_tcr ||
-                    isEq g.sbyte_tcr || isEq g.byte_tcr || 
-                    isEq g.int16_tcr || isEq g.uint16_tcr ||
-                    isEq g.int32_tcr || isEq g.uint32_tcr ||
-                    isEq g.int64_tcr || isEq g.uint64_tcr ||
-                    isEq g.char_tcr ||
-                    isEq g.float32_tcr ||
-                    isEq g.float_tcr ||
-                    isEq g.decimal_tcr ||
-                    isEq g.bool_tcr then
-            true
-        else
-            let tycon = tcref.Deref
-            if tycon.IsEnumTycon then 
+    
+    if isStructTupleTy g ty then
+        (destStructTupleTy g ty) |> List.forall (isUnmanagedTy g)
+    else if isStructAnonRecdTy g ty then
+        match tryDestAnonRecdTy g ty with
+        | ValueSome(_, tys) -> tys |> List.forall (isUnmanagedTy g)
+        | ValueNone -> false
+    else
+        match tryAppTy g ty with
+        | ValueSome (tcref, _) ->
+            let isEq tcref2 = tyconRefEq g tcref tcref2
+            if isEq g.nativeptr_tcr || isEq g.nativeint_tcr ||
+                        isEq g.sbyte_tcr || isEq g.byte_tcr || 
+                        isEq g.int16_tcr || isEq g.uint16_tcr ||
+                        isEq g.int32_tcr || isEq g.uint32_tcr ||
+                        isEq g.int64_tcr || isEq g.uint64_tcr ||
+                        isEq g.char_tcr ||
+                        isEq g.float32_tcr ||
+                        isEq g.float_tcr ||
+                        isEq g.decimal_tcr ||
+                        isEq g.bool_tcr then
                 true
-            elif tycon.IsStructOrEnumTycon then
-                match tycon.TyparsNoRange with
-                | [] -> tycon.AllInstanceFieldsAsList |> List.forall (fun r -> isUnmanagedTy g r.rfield_type) 
-                | _ -> false // generic structs are never 
-            else false
-    | ValueNone ->
-        false
+            else
+                let tycon = tcref.Deref
+                if tycon.IsEnumTycon then 
+                    true
+                elif tycon.IsStructOrEnumTycon then
+                    let tinst = mkInstForAppTy g ty
+                    tycon.AllInstanceFieldsAsList |> List.forall (fun r -> isUnmanagedTy g (actualTyOfRecdField tinst r))
+                else false
+        | ValueNone ->
+            false
 
 let isInterfaceTycon x = 
     isILInterfaceTycon x || x.IsFSharpInterfaceTycon

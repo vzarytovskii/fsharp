@@ -173,7 +173,7 @@ type CompilerAssert private () =
     static let assertErrors libAdjust ignoreWarnings (errors: FSharpDiagnostic []) expectedErrors =
         let errors =
             errors
-            |> Array.filter (fun error -> if ignoreWarnings then error.Severity <> FSharpDiagnosticSeverity.Warning else true)
+            |> Array.filter (fun error -> if ignoreWarnings then error.Severity <> FSharpDiagnosticSeverity.Warning && error.Severity <> FSharpDiagnosticSeverity.Info else true)
             |> Array.distinctBy (fun e -> e.Severity, e.ErrorNumber, e.StartLine, e.StartColumn, e.EndLine, e.EndColumn, e.Message)
             |> Array.map (fun info ->
                 (info.Severity, info.ErrorNumber, (info.StartLine - libAdjust, info.StartColumn + 1, info.EndLine - libAdjust, info.EndColumn + 1), info.Message))
@@ -692,13 +692,13 @@ Updated automatically, please check diffs in your pull request, changes must be 
     static member RunScript source expectedErrorMessages =
         CompilerAssert.RunScriptWithOptions [||] source expectedErrorMessages
 
-    static member Parse (source: string, ?langVersion: string) =
+    static member Parse (source: string, ?langVersion: string, ?fileName: string) =
         let langVersion = defaultArg langVersion "default"
-        let sourceFileName = "test.fs"
+        let sourceFileName = defaultArg fileName "test.fsx"
         let parsingOptions =
             { FSharpParsingOptions.Default with
                 SourceFiles = [| sourceFileName |]
-                LangVersionText=langVersion }
+                LangVersionText = langVersion }
         checker.ParseFile(sourceFileName, SourceText.ofString source, parsingOptions) |> Async.RunImmediate
 
     static member ParseWithErrors (source: string, ?langVersion: string) = fun expectedParseErrors -> 

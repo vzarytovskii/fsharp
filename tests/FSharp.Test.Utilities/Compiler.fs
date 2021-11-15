@@ -213,6 +213,9 @@ module rec Compiler =
     let withLangVersion50 (cUnit: CompilationUnit) : CompilationUnit =
         withOptionsHelper [ "--langversion:5.0" ] "withLangVersion50 is only supported on F#" cUnit
 
+    let withLangVersion60 (cUnit: CompilationUnit) : CompilationUnit =
+        withOptionsHelper [ "--langversion:6.0" ] "withLangVersion60 is only supported on F#" cUnit
+
     let withLangVersionPreview (cUnit: CompilationUnit) : CompilationUnit =
         withOptionsHelper [ "--langversion:preview" ] "withLangVersionPreview is only supported on F#" cUnit
 
@@ -262,7 +265,8 @@ module rec Compiler =
                     let refs = loop [] fs.References
                     let source = getSource fs.Source
                     let name = defaultArg fs.Name null
-                    let cmpl = Compilation.Create(source, fs.SourceKind, fs.OutputType, cmplRefs = refs, name = name) |> CompilationReference.CreateFSharp
+                    let options = fs.Options |> List.toArray
+                    let cmpl = Compilation.Create(source, fs.SourceKind, fs.OutputType, options = options, cmplRefs = refs, name = name) |> CompilationReference.CreateFSharp
                     loop (cmpl::acc) xs
                 | CS cs ->
                     let refs = loop [] cs.References
@@ -367,7 +371,8 @@ module rec Compiler =
 
     let private parseFSharp (fsSource: FSharpCompilationSource) : TestResult =
         let source = getSource fsSource.Source
-        let parseResults = CompilerAssert.Parse source
+        let fileName = if fsSource.SourceKind = SourceKind.Fsx then "test.fsx" else "test.fs"
+        let parseResults = CompilerAssert.Parse(source, fileName = fileName)
         let failed = parseResults.ParseHadErrors
 
         let diagnostics =  parseResults.Diagnostics |> fromFSharpDiagnostic

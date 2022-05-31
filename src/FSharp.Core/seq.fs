@@ -37,10 +37,16 @@ module Internal =
                     [|
                         SR.GetString SR.notEnoughElements
                         shortBy
-                        (if shortBy = 1 then "element" else "elements")
+                        (if shortBy = 1 then
+                             "element"
+                         else
+                             "elements")
                     |]
 
-            if index = 0 then e.Current else nth (index - 1) e
+            if index = 0 then
+                e.Current
+            else
+                nth (index - 1) e
 
         [<NoEquality; NoComparison>]
         type MapEnumeratorState =
@@ -300,7 +306,8 @@ module Internal =
                 let getCurrent () =
                     if index = unstarted then notStarted ()
 
-                    if index = completed then alreadyFinished ()
+                    if index = completed then
+                        alreadyFinished ()
 
                     match box current with
                     | null -> current <- Lazy<_>.Create (fun () -> f index)
@@ -343,7 +350,10 @@ module Internal =
 
             member _.Get() =
                 if curr >= 0 then
-                    if curr >= len then alreadyFinished () else arr.[curr]
+                    if curr >= len then
+                        alreadyFinished ()
+                    else
+                        arr.[curr]
                 else
                     notStarted ()
 
@@ -504,7 +514,12 @@ module Internal =
             member _.Enumerator = e
 
             interface Generator<'T> with
-                member _.Apply = (fun () -> if e.MoveNext() then Yield e.Current else Stop)
+                member _.Apply =
+                    (fun () ->
+                        if e.MoveNext() then
+                            Yield e.Current
+                        else
+                            Stop)
 
                 member _.Disposer = Some e.Dispose
 
@@ -1082,7 +1097,10 @@ module Seq =
 
         let rec loop i =
             if ie.MoveNext() then
-                if predicate ie.Current then i else loop (i + 1)
+                if predicate ie.Current then
+                    i
+                else
+                    loop (i + 1)
             else
                 indexNotFound ()
 
@@ -1095,7 +1113,10 @@ module Seq =
 
         let rec loop i =
             if ie.MoveNext() then
-                if predicate ie.Current then Some i else loop (i + 1)
+                if predicate ie.Current then
+                    Some i
+                else
+                    loop (i + 1)
             else
                 None
 
@@ -1194,7 +1215,10 @@ module Seq =
                         else
                             oneStepTo i
 
-                            if i < prefix.Count then Some(prefix.[i], i + 1) else None))
+                            if i < prefix.Count then
+                                Some(prefix.[i], i + 1)
+                            else
+                                None))
                 0
 
         let cleanup () =
@@ -1303,7 +1327,8 @@ module Seq =
             let hashSet = HashSet<_>(HashIdentity.Structural<_>)
 
             for v in source do
-                if hashSet.Add(projection v) then yield v
+                if hashSet.Add(projection v) then
+                    yield v
         }
 
     [<CompiledName("SortBy")>]
@@ -1617,7 +1642,10 @@ module Seq =
         checkNonNull "source" source
         use e = source.GetEnumerator()
 
-        if (e.MoveNext()) then Some e.Current else None
+        if (e.MoveNext()) then
+            Some e.Current
+        else
+            None
 
     [<CompiledName("Tail")>]
     let tail (source: seq<'T>) =
@@ -1739,7 +1767,10 @@ module Seq =
                     res.[i] <- e.Current
                     i <- i + 1
 
-                if i = chunkSize then res else res |> Array.subUnchecked 0 i
+                if i = chunkSize then
+                    res
+                else
+                    res |> Array.subUnchecked 0 i
 
             while e.MoveNext() do
                 yield nextChunk ()
@@ -1779,7 +1810,8 @@ module Seq =
             let mutable i = 0
 
             for item in source do
-                if i < index || i >= index + count then yield item
+                if i < index || i >= index + count then
+                    yield item
 
                 i <- i + 1
 
@@ -1796,7 +1828,10 @@ module Seq =
             let mutable i = 0
 
             for item in source do
-                if i <> index then yield item else yield value
+                if i <> index then
+                    yield item
+                else
+                    yield value
 
                 i <- i + 1
 

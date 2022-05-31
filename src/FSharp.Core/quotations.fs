@@ -170,7 +170,10 @@ type Var(name: string, typ: Type, ?isMutable: bool) =
                             else
                                 let c = compare v.Type.Assembly.FullName v2.Type.Assembly.FullName
 
-                                if c <> 0 then c else compare v.Stamp v2.Stamp
+                                if c <> 0 then
+                                    c
+                                else
+                                    compare v.Stamp v2.Stamp
             | _ -> 0
 
 /// Represents specifications of a subset of F# expressions
@@ -340,7 +343,10 @@ and [<CompiledName("FSharpExpr"); StructuredFormatDisplay("{DebugText}")>] Expr(
                  wordL (tagUnionCase unionCase.Name))
 
         let minfoL (minfo: MethodInfo) =
-            if long then objL minfo else wordL (tagMethod minfo.Name)
+            if long then
+                objL minfo
+            else
+                wordL (tagMethod minfo.Name)
 
         let cinfoL (cinfo: ConstructorInfo) =
             if long then
@@ -349,10 +355,16 @@ and [<CompiledName("FSharpExpr"); StructuredFormatDisplay("{DebugText}")>] Expr(
                 wordL (tagMethod cinfo.DeclaringType.Name)
 
         let pinfoL (pinfo: PropertyInfo) =
-            if long then objL pinfo else wordL (tagProperty pinfo.Name)
+            if long then
+                objL pinfo
+            else
+                wordL (tagProperty pinfo.Name)
 
         let finfoL (finfo: FieldInfo) =
-            if long then objL finfo else wordL (tagField finfo.Name)
+            if long then
+                objL finfo
+            else
+                wordL (tagField finfo.Name)
 
         let rec (|NLambdas|_|) n (e: Expr) =
             match e with
@@ -451,7 +463,8 @@ module Patterns =
         let lim = initial + len
 
         member b.ReadByte() =
-            if pos >= lim then failwith "end of stream"
+            if pos >= lim then
+                failwith "end of stream"
 
             let res = int32 bytes.[pos]
             pos <- pos + 1
@@ -1054,7 +1067,11 @@ module Patterns =
         mkValue (box v, typeof<'T>)
 
     let mkLiftedValueOpG (v, ty: System.Type) =
-        let obj = if ty.IsEnum then System.Enum.ToObject(ty, box v) else box v
+        let obj =
+            if ty.IsEnum then
+                System.Enum.ToObject(ty, box v)
+            else
+                box v
 
         ValueOp(obj, ty, None)
 
@@ -1584,7 +1601,10 @@ module Patterns =
                         let solution, weight =
                             candidates |> Array.map (fun mi -> mi, weight mi) |> Array.maxBy snd
 
-                        if weight = FAIL then None else Some solution
+                        if weight = FAIL then
+                            None
+                        else
+                            Some solution
 
                 match solution with
                 | Some mi -> mi
@@ -1703,9 +1723,12 @@ module Patterns =
         instMeth (ngmeth, methTypeArgs)
 
     let pinfoIsStatic (pinfo: PropertyInfo) =
-        if pinfo.CanRead then pinfo.GetGetMethod(true).IsStatic
-        elif pinfo.CanWrite then pinfo.GetSetMethod(true).IsStatic
-        else false
+        if pinfo.CanRead then
+            pinfo.GetGetMethod(true).IsStatic
+        elif pinfo.CanWrite then
+            pinfo.GetSetMethod(true).IsStatic
+        else
+            false
 
     /// Unpickling
     module SimpleUnpickle =
@@ -1873,7 +1896,11 @@ module Patterns =
 
     let decodeArrayTy n (tys: Type list) =
         match tys with
-        | [ ty ] -> if (n = 1) then ty.MakeArrayType() else ty.MakeArrayType n
+        | [ ty ] ->
+            if (n = 1) then
+                ty.MakeArrayType()
+            else
+                ty.MakeArrayType n
         // typeof<int>.MakeArrayType 1 returns "Int[*]" but we need "Int[]"
         | _ -> invalidArg "tys" (SR.GetString(SR.QexpectedOneType))
 
@@ -2908,7 +2935,11 @@ module DerivedPatterns =
         | Call (_, minfo1, _)) ->
             let isg1 = minfo1.IsGenericMethod
 
-            let gmd = if isg1 then minfo1.GetGenericMethodDefinition() else null
+            let gmd =
+                if isg1 then
+                    minfo1.GetGenericMethodDefinition()
+                else
+                    null
 
             // end-of-precomputation
 

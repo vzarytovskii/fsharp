@@ -179,13 +179,21 @@ module List =
     [<CompiledName("Item")>]
     let rec item index list =
         match list with
-        | h :: t when index >= 0 -> if index = 0 then h else item (index - 1) t
+        | h :: t when index >= 0 ->
+            if index = 0 then
+                h
+            else
+                item (index - 1) t
         | _ -> invalidArg "index" (SR.GetString(SR.indexOutOfBounds))
 
     [<CompiledName("TryItem")>]
     let rec tryItem index list =
         match list with
-        | h :: t when index >= 0 -> if index = 0 then Some h else tryItem (index - 1) t
+        | h :: t when index >= 0 ->
+            if index = 0 then
+                Some h
+            else
+                tryItem (index - 1) t
         | _ -> None
 
     [<CompiledName("Get")>]
@@ -469,13 +477,21 @@ module List =
     let rec find predicate list =
         match list with
         | [] -> indexNotFound ()
-        | h :: t -> if predicate h then h else find predicate t
+        | h :: t ->
+            if predicate h then
+                h
+            else
+                find predicate t
 
     [<CompiledName("TryFind")>]
     let rec tryFind predicate list =
         match list with
         | [] -> None
-        | h :: t -> if predicate h then Some h else tryFind predicate t
+        | h :: t ->
+            if predicate h then
+                Some h
+            else
+                tryFind predicate t
 
     [<CompiledName("FindBack")>]
     let findBack predicate list =
@@ -661,7 +677,11 @@ module List =
         let rec loop n list =
             match list with
             | [] -> indexNotFound ()
-            | h :: t -> if predicate h then n else loop (n + 1) t
+            | h :: t ->
+                if predicate h then
+                    n
+                else
+                    loop (n + 1) t
 
         loop 0 list
 
@@ -670,7 +690,11 @@ module List =
         let rec loop n list =
             match list with
             | [] -> None
-            | h :: t -> if predicate h then Some n else loop (n + 1) t
+            | h :: t ->
+                if predicate h then
+                    Some n
+                else
+                    loop (n + 1) t
 
         loop 0 list
 

@@ -164,7 +164,10 @@ module ResumableCode =
                 // into this code!
                 let __stack_fin = code1.Invoke(&sm)
 
-                if __stack_fin then code2.Invoke(&sm) else false
+                if __stack_fin then
+                    code2.Invoke(&sm)
+                else
+                    false
             //-- RESUMABLE CODE END
             else
                 CombineDynamic(&sm, code1, code2))
@@ -401,7 +404,8 @@ module ResumableCode =
         TryFinally(
             ResumableCode<'Data, 'T>(fun sm -> (body resource).Invoke(&sm)),
             ResumableCode<'Data, unit>(fun sm ->
-                if not (isNull (box resource)) then resource.Dispose()
+                if not (isNull (box resource)) then
+                    resource.Dispose()
 
                 true)
         )

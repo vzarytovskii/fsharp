@@ -1,6 +1,6 @@
 <Project>
 
-  <Import Project="Sdk.targets" Sdk="Microsoft.DotNet.Arcade.Sdk" />
+  <Import Project="Sdk.targets" Sdk="Microsoft.DotNet.Arcade.Sdk" Condition="'$(DisableArcade)' != 'true'" />
   <Import Project="eng\targets\Imports.targets" />
   <Import Project="eng\targets\NGenBinaries.targets" />
   <Import Project="eng\targets\NuGet.targets" />
@@ -139,7 +139,7 @@
   <Target Name="PrefixRepoToReleaseNotes"
           BeforeTargets="InitializeStandardNuspecProperties"
           DependsOnTargets="InitializeSourceControlInformationFromSourceControlManager"
-          Condition="'$(IsPackable)'=='true'">
+          Condition="'$(IsPackable)'=='true' and '$(DisableArcade)'!='true'">
 
     <PropertyGroup>
       <_GitUrl>$([System.Text.RegularExpressions.Regex]::Replace($(ScmRepositoryUrl), ".git$", ""))</_GitUrl>

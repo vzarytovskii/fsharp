@@ -481,6 +481,10 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup Condition="'$(DisableArcade)' == 'true'">
+    <ProjectReference Include="$(RepoRoot)buildtools/buildtools.proj" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="$(MSBuildThisFileDirectory)..\FSharp.DependencyManager.Nuget\FSharp.DependencyManager.Nuget.fsproj" />
   </ItemGroup>

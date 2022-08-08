@@ -14,8 +14,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="$(FSharpSourcesRoot)\FSharp.Core\FSharp.Core.fsproj" />
+    <ProjectReference Include="$(FSharpSourcesRoot)\FSharp.Core\FSharp.Core.fsproj" Condition="'$(FSHARPCORE_USE_PACKAGE)' != 'true'" />
     <ProjectReference Include="..\CSharp_Analysis\CSharp_Analysis.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FSHARPCORE_USE_PACKAGE)' == 'true'">
+    <PackageReference Include="FSharp.Core" Version="$(FSharpCoreShippedPackageVersionValue)" />
   </ItemGroup>
 
 </Project>

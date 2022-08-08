@@ -1,6 +1,30 @@
 <Project>
 
-  <Import Project="Sdk.props" Sdk="Microsoft.DotNet.Arcade.Sdk" />
+  <!--
+    When developers load the FSharp.Compiler.Service solution we set FSHARPCORE_USE_PACKAGE to true if it hasn't already been set to a value.
+    This option ensures that building and testing uses the specified FSharp.Core nuget package instead of the local
+    FSharp.Core project.
+  -->
+  <PropertyGroup>
+    <FCSSolutionName>FSharp.Compiler.Service</FCSSolutionName>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(FSHARPCORE_USE_PACKAGE)' == ''">
+    <FSHARPCORE_USE_PACKAGE Condition="'$(SolutionName)' == '$(FCSSolutionName)'">true</FSHARPCORE_USE_PACKAGE>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(SolutionName)' == '$(FCSSolutionName)'">
+    <DisableArcade>true</DisableArcade>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(DisableArcade)' == 'true'">
+    <RepoRoot Condition="'$(RepoRoot)' == ''">$(MSBuildThisFileDirectory)</RepoRoot>
+    <PreferNetFrameworkTools>false</PreferNetFrameworkTools>
+  </PropertyGroup>
+
+  <Import Project="eng\Versions.props" Condition="'$(DisableArcade)' == 'true'" />
+
+  <Import Project="Sdk.props" Sdk="Microsoft.DotNet.Arcade.Sdk" Condition="'$(DisableArcade)' != 'true'" />
   <Import Project="eng\targets\Settings.props" />
 
   <PropertyGroup>

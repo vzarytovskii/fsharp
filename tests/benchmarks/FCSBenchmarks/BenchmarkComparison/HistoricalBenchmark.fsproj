@@ -18,7 +18,7 @@
     <Optimize>true</Optimize>
     <Tailcalls>true</Tailcalls>
   </PropertyGroup>
-  
+
   <PropertyGroup>
     <FcsReferenceType Condition="'$(FcsReferenceType)' == ''">project</FcsReferenceType>
     <FcsProjectPath Condition="'$(FcsProjectPath)' == ''">..\..\..\..\src\Compiler\FSharp.Compiler.Service.fsproj</FcsProjectPath>
@@ -40,7 +40,7 @@
   <!-- Reference a project -->
   <ItemGroup Condition="'$(FcsReferenceType)' == 'project'">
     <ProjectReference Include="$(FcsProjectPath)" />
-    <ProjectReference Include="..\..\..\..\src\FSharp.Core\FSharp.Core.fsproj" />
+    <ProjectReference Include="..\..\..\..\src\FSharp.Core\FSharp.Core.fsproj" Condition="'$(FSHARPCORE_USE_PACKAGE)' != 'true'" />
   </ItemGroup>
   <!-- Reference the FCS NuGet package with the specified $FcsVersion, use locally built FSharp.Core
        Arguably this could be changed to depend on the version of FSharp.Core that's pulled in via FSharp.Compiler.Service.
@@ -48,16 +48,20 @@
   -->
   <ItemGroup Condition=" '$(FcsReferenceType)' == 'nuget' ">
     <PackageReference Include="FSharp.Compiler.Service" Version="$(FcsNuGetVersion)" />
-    <ProjectReference Include="..\..\..\..\src\FSharp.Core\FSharp.Core.fsproj" />
+    <ProjectReference Include="..\..\..\..\src\FSharp.Core\FSharp.Core.fsproj" Condition="'$(FSHARPCORE_USE_PACKAGE)' != 'true'" />
   </ItemGroup>
   <!-- Reference the dlls specified in $FcsDllPath and $FSharpCoreDllPath -->
   <ItemGroup Condition=" '$(FcsReferenceType)' == 'dll' ">
     <Reference Include="FSharp.Compiler.Service">
       <HintPath>$(FcsDllPath)</HintPath>
     </Reference>
-    <Reference Include="FSharp.Core">
+    <Reference Include="FSharp.Core" Condition="'$(FSHARPCORE_USE_PACKAGE)' != 'true'">
       <HintPath>$(FSharpCoreDllPath)</HintPath>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FSHARPCORE_USE_PACKAGE)' == 'true'">
+    <PackageReference Include="FSharp.Core" Version="$(FSharpCoreShippedPackageVersionValue)" />
   </ItemGroup>
 
   <Target Name="FakeBuild" BeforeTargets="Build">

@@ -279,9 +279,9 @@ val mlCompatWarning: s: string -> m: range -> unit
 
 val mlCompatError: s: string -> m: range -> unit
 
-val suppressErrorReporting: f: (unit -> 'T) -> 'T
+val inline suppressErrorReporting: f: (unit -> 'T) -> 'T
 
-val conditionallySuppressErrorReporting: cond: bool -> f: (unit -> 'T) -> 'T
+val inline conditionallySuppressErrorReporting: cond: bool -> f: (unit -> 'T) -> 'T
 
 /// The result type of a computational modality to collect warnings and possibly fail
 [<NoEquality; NoComparison>]
@@ -307,7 +307,7 @@ val ResultD: x: 'T -> OperationResult<'T>
 
 val CheckNoErrorsAndGetWarnings: res: OperationResult<'T> -> (exn list * 'T) option
 
-val (++): res: OperationResult<'T> -> f: ('T -> OperationResult<'b>) -> OperationResult<'b>
+val inline (++): res: OperationResult<'T> -> f: ('T -> OperationResult<'b>) -> OperationResult<'b>
 
 /// Stop on first error. Accumulate warnings and continue.
 val IterateD: f: ('T -> OperationResult<unit>) -> xs: 'T list -> OperationResult<unit>
@@ -320,34 +320,34 @@ type TrackErrorsBuilder =
 
     new: unit -> TrackErrorsBuilder
 
-    member Bind: res: OperationResult<'h> * k: ('h -> OperationResult<'i>) -> OperationResult<'i>
+    member inline Bind: res: OperationResult<'h> * k: ('h -> OperationResult<'i>) -> OperationResult<'i>
 
-    member Combine: expr1: OperationResult<'c> * expr2: ('c -> OperationResult<'d>) -> OperationResult<'d>
+    member inline Combine: expr1: OperationResult<'c> * expr2: ('c -> OperationResult<'d>) -> OperationResult<'d>
 
-    member Delay: fn: (unit -> 'b) -> (unit -> 'b)
+    member inline Delay: fn: (unit -> 'b) -> (unit -> 'b)
 
-    member For: seq: 'e list * k: ('e -> OperationResult<unit>) -> OperationResult<unit>
+    member inline For: seq: 'e list * k: ('e -> OperationResult<unit>) -> OperationResult<unit>
 
-    member Return: res: 'g -> OperationResult<'g>
+    member inline Return: res: 'g -> OperationResult<'g>
 
-    member ReturnFrom: res: 'f -> 'f
+    member inline ReturnFrom: res: 'f -> 'f
 
-    member Run: fn: (unit -> 'T) -> 'T
+    member inline Run: fn: (unit -> 'T) -> 'T
 
-    member While: gd: (unit -> bool) * k: (unit -> OperationResult<unit>) -> OperationResult<unit>
+    member inline While: gd: (unit -> bool) * k: (unit -> OperationResult<unit>) -> OperationResult<unit>
 
-    member Zero: unit -> OperationResult<unit>
+    member inline Zero: unit -> OperationResult<unit>
 
 val trackErrors: TrackErrorsBuilder
 
-val OptionD: f: ('T -> OperationResult<unit>) -> xs: 'T option -> OperationResult<unit>
+val inline OptionD: f: ('T -> OperationResult<unit>) -> xs: 'T option -> OperationResult<unit>
 
-val IterateIdxD: f: (int -> 'T -> OperationResult<unit>) -> xs: 'T list -> OperationResult<unit>
+val inline IterateIdxD: f: (int -> 'T -> OperationResult<unit>) -> xs: 'T list -> OperationResult<unit>
 
 /// Stop on first error. Accumulate warnings and continue.
 val Iterate2D: f: ('T -> 'b -> OperationResult<unit>) -> xs: 'T list -> ys: 'b list -> OperationResult<unit>
 
-val TryD: f: (unit -> OperationResult<'T>) -> g: (exn -> OperationResult<'T>) -> OperationResult<'T>
+val inline TryD: f: (unit -> OperationResult<'T>) -> g: (exn -> OperationResult<'T>) -> OperationResult<'T>
 
 val RepeatWhileD: nDeep: int -> body: (int -> OperationResult<bool>) -> OperationResult<unit>
 

@@ -573,7 +573,7 @@ let mlCompatError s m =
     errorR (UserCompilerMessage(FSComp.SR.mlCompatError s, 62, m))
 
 [<DebuggerStepThrough>]
-let suppressErrorReporting f =
+let inline suppressErrorReporting ([<InlineIfLambda>]f) =
     let diagnosticsLogger = DiagnosticsThreadStatics.DiagnosticsLogger
 
     try
@@ -589,7 +589,7 @@ let suppressErrorReporting f =
         SetThreadDiagnosticsLoggerNoUnwind diagnosticsLogger
 
 [<DebuggerStepThrough>]
-let conditionallySuppressErrorReporting cond f =
+let inline conditionallySuppressErrorReporting cond ([<InlineIfLambda>]f) =
     if cond then suppressErrorReporting f else f ()
 
 //------------------------------------------------------------------------
@@ -634,7 +634,7 @@ let CheckNoErrorsAndGetWarnings res =
 
 /// The bind in the monad. Stop on first error. Accumulate warnings and continue.
 [<DebuggerHidden; DebuggerStepThrough>]
-let (++) res f =
+let inline (++) res ([<InlineIfLambda>]f) =
     match res with
     | OkResult ([], res) -> (* tailcall *) f res
     | OkResult (warns, res) ->
@@ -667,28 +667,28 @@ let rec MapD_loop f acc xs =
 let MapD f xs = MapD_loop f [] xs
 
 type TrackErrorsBuilder() =
-    member x.Bind(res, k) = res ++ k
-    member x.Return res = ResultD res
-    member x.ReturnFrom res = res
-    member x.For(seq, k) = IterateD k seq
-    member x.Combine(expr1, expr2) = expr1 ++ expr2
-    member x.While(gd, k) = WhileD gd k
-    member x.Zero() = CompleteD
-    member x.Delay fn = fun () -> fn ()
-    member x.Run fn = fn ()
+    member inline x.Bind(res, [<InlineIfLambda>]k) = res ++ k
+    member inline x.Return res = ResultD res
+    member inline x.ReturnFrom res = res
+    member inline x.For(seq, [<InlineIfLambda>]k) = IterateD k seq
+    member inline x.Combine(expr1, expr2) = expr1 ++ expr2
+    member inline x.While(gd, [<InlineIfLambda>]k) = WhileD gd k
+    member inline x.Zero() = CompleteD
+    member inline x.Delay ([<InlineIfLambda>]fn) = fun () -> fn ()
+    member inline x.Run ([<InlineIfLambda>]fn) = fn ()
 
 let trackErrors = TrackErrorsBuilder()
 
 /// Stop on first error. Accumulate warnings and continue.
 [<DebuggerHidden; DebuggerStepThrough>]
-let OptionD f xs =
+let inline OptionD ([<InlineIfLambda>]f) xs =
     match xs with
     | None -> CompleteD
     | Some h -> f h
 
 /// Stop on first error. Report index
 [<DebuggerHidden; DebuggerStepThrough>]
-let IterateIdxD f xs =
+let inline IterateIdxD ([<InlineIfLambda>]f) xs =
     let rec loop xs i =
         match xs with
         | [] -> CompleteD
@@ -706,7 +706,7 @@ let rec Iterate2D f xs ys =
 
 /// Keep the warnings, propagate the error to the exception continuation.
 [<DebuggerHidden; DebuggerStepThrough>]
-let TryD f g =
+let inline TryD ([<InlineIfLambda>]f) g =
     match f () with
     | ErrorResult (warns, err) ->
         trackErrors {
@@ -720,15 +720,15 @@ let rec RepeatWhileD nDeep body =
     body nDeep ++ (fun x -> if x then RepeatWhileD (nDeep + 1) body else CompleteD)
 
 [<DebuggerHidden; DebuggerStepThrough>]
-let inline AtLeastOneD f l =
+let inline AtLeastOneD ([<InlineIfLambda>]f) l =
     MapD f l ++ (fun res -> ResultD(List.exists id res))
 
 [<DebuggerHidden; DebuggerStepThrough>]
-let inline AtLeastOne2D f xs ys =
+let inline AtLeastOne2D ([<InlineIfLambda>]f) xs ys =
     List.zip xs ys |> AtLeastOneD(fun (x, y) -> f x y)
 
 [<DebuggerHidden; DebuggerStepThrough>]
-let inline MapReduceD mapper zero reducer l =
+let inline MapReduceD ([<InlineIfLambda>]mapper) zero ([<InlineIfLambda>]reducer) l =
     MapD mapper l
     ++ (fun res ->
         ResultD(
@@ -738,7 +738,7 @@ let inline MapReduceD mapper zero reducer l =
         ))
 
 [<DebuggerHidden; DebuggerStepThrough>]
-let inline MapReduce2D mapper zero reducer xs ys =
+let inline MapReduce2D ([<InlineIfLambda>]mapper) zero ([<InlineIfLambda>]reducer) xs ys =
     List.zip xs ys |> MapReduceD (fun (x, y) -> mapper x y) zero reducer
 
 [<RequireQualifiedAccess>]

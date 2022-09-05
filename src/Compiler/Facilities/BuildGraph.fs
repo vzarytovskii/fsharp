@@ -40,7 +40,7 @@ type NodeCodeBuilder() =
     member _.Zero() : NodeCode<unit> = zero
 
     [<DebuggerHidden; DebuggerStepThrough>]
-    member _.Delay(f: unit -> NodeCode<'T>) =
+    member inline _.Delay([<InlineIfLambda>]f: unit -> NodeCode<'T>) =
         Node(
             async.Delay(fun () ->
                 match f () with
@@ -48,13 +48,13 @@ type NodeCodeBuilder() =
         )
 
     [<DebuggerHidden; DebuggerStepThrough>]
-    member _.Return value = Node(async.Return(value))
+    member inline _.Return value = Node(async.Return(value))
 
     [<DebuggerHidden; DebuggerStepThrough>]
-    member _.ReturnFrom(computation: NodeCode<_>) = computation
+    member inline _.ReturnFrom(computation: NodeCode<_>) = computation
 
     [<DebuggerHidden; DebuggerStepThrough>]
-    member _.Bind(Node (p): NodeCode<'a>, binder: 'a -> NodeCode<'b>) : NodeCode<'b> =
+    member inline _.Bind(Node (p): NodeCode<'a>, [<InlineIfLambda>]binder: 'a -> NodeCode<'b>) : NodeCode<'b> =
         Node(
             async.Bind(
                 p,
@@ -65,7 +65,7 @@ type NodeCodeBuilder() =
         )
 
     [<DebuggerHidden; DebuggerStepThrough>]
-    member _.TryWith(Node (p): NodeCode<'T>, binder: exn -> NodeCode<'T>) : NodeCode<'T> =
+    member inline _.TryWith(Node (p): NodeCode<'T>, [<InlineIfLambda>]binder: exn -> NodeCode<'T>) : NodeCode<'T> =
         Node(
             async.TryWith(
                 p,
@@ -76,10 +76,10 @@ type NodeCodeBuilder() =
         )
 
     [<DebuggerHidden; DebuggerStepThrough>]
-    member _.TryFinally(Node (p): NodeCode<'T>, binder: unit -> unit) : NodeCode<'T> = Node(async.TryFinally(p, binder))
+    member inline _.TryFinally(Node (p): NodeCode<'T>, [<InlineIfLambda>]binder: unit -> unit) : NodeCode<'T> = Node(async.TryFinally(p, binder))
 
     [<DebuggerHidden; DebuggerStepThrough>]
-    member _.For(xs: 'T seq, binder: 'T -> NodeCode<unit>) : NodeCode<unit> =
+    member inline _.For(xs: 'T seq, [<InlineIfLambda>]binder: 'T -> NodeCode<unit>) : NodeCode<unit> =
         Node(
             async.For(
                 xs,
@@ -90,10 +90,10 @@ type NodeCodeBuilder() =
         )
 
     [<DebuggerHidden; DebuggerStepThrough>]
-    member _.Combine(Node (p1): NodeCode<unit>, Node (p2): NodeCode<'T>) : NodeCode<'T> = Node(async.Combine(p1, p2))
+    member inline _.Combine(Node (p1): NodeCode<unit>, Node (p2): NodeCode<'T>) : NodeCode<'T> = Node(async.Combine(p1, p2))
 
     [<DebuggerHidden; DebuggerStepThrough>]
-    member _.Using(value: CompilationGlobalsScope, binder: CompilationGlobalsScope -> NodeCode<'U>) =
+    member inline _.Using(value: CompilationGlobalsScope, [<InlineIfLambda>]binder: CompilationGlobalsScope -> NodeCode<'U>) =
         Node(
             async {
                 DiagnosticsThreadStatics.DiagnosticsLogger <- value.DiagnosticsLogger

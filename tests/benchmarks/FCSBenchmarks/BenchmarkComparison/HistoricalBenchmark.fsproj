@@ -18,7 +18,7 @@
     <Optimize>true</Optimize>
     <Tailcalls>true</Tailcalls>
   </PropertyGroup>
-  
+
   <PropertyGroup>
     <FcsReferenceType Condition="'$(FcsReferenceType)' == ''">project</FcsReferenceType>
     <FcsProjectPath Condition="'$(FcsProjectPath)' == ''">..\..\..\..\src\Compiler\FSharp.Compiler.Service.fsproj</FcsProjectPath>
@@ -33,6 +33,10 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.13.1" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(FcsReferenceType)' == 'project'">
+    <ProjectReference Include="HistoricalBenchmark.Runner\\HistoricalBenchmark.Runner.fsproj" />
   </ItemGroup>
 
   <!-- Reference FCS in one of three different ways -->

@@ -13,8 +13,8 @@ open Internal.Utilities.Library
 /// This is essentially cancellable async code where the only asynchronous waits are on nodes.
 /// When a node is evaluated the evaluation is run synchronously on the thread of the
 /// first requestor.
-[<NoEquality; NoComparison; Sealed>]
-type NodeCode<'T>
+[<NoEquality; NoComparison>]
+type NodeCode<'T> = Node of Async<'T>
 
 type Async<'T> with
 
@@ -25,27 +25,27 @@ type Async<'T> with
 [<Sealed>]
 type NodeCodeBuilder =
 
-    member Bind: NodeCode<'T> * ('T -> NodeCode<'U>) -> NodeCode<'U>
+    member inline Bind: NodeCode<'T> * ('T -> NodeCode<'U>) -> NodeCode<'U>
 
     member Zero: unit -> NodeCode<unit>
 
-    member Delay: (unit -> NodeCode<'T>) -> NodeCode<'T>
+    member inline Delay: (unit -> NodeCode<'T>) -> NodeCode<'T>
 
-    member Return: 'T -> NodeCode<'T>
+    member inline Return: 'T -> NodeCode<'T>
 
-    member ReturnFrom: NodeCode<'T> -> NodeCode<'T>
+    member inline ReturnFrom: NodeCode<'T> -> NodeCode<'T>
 
-    member TryWith: NodeCode<'T> * (exn -> NodeCode<'T>) -> NodeCode<'T>
+    member inline TryWith: NodeCode<'T> * (exn -> NodeCode<'T>) -> NodeCode<'T>
 
-    member TryFinally: NodeCode<'T> * (unit -> unit) -> NodeCode<'T>
+    member inline TryFinally: NodeCode<'T> * (unit -> unit) -> NodeCode<'T>
 
-    member For: xs: 'T seq * binder: ('T -> NodeCode<unit>) -> NodeCode<unit>
+    member inline For: xs: 'T seq * binder: ('T -> NodeCode<unit>) -> NodeCode<unit>
 
-    member Combine: x1: NodeCode<unit> * x2: NodeCode<'T> -> NodeCode<'T>
+    member inline Combine: x1: NodeCode<unit> * x2: NodeCode<'T> -> NodeCode<'T>
 
     /// A limited form 'use' for establishing the compilation globals.  (Note
     /// that a proper generic 'use' could be implemented but has not currently been necessary)
-    member Using: CompilationGlobalsScope * (CompilationGlobalsScope -> NodeCode<'T>) -> NodeCode<'T>
+    member inline Using: CompilationGlobalsScope * (CompilationGlobalsScope -> NodeCode<'T>) -> NodeCode<'T>
 
 /// Specifies code that can be run as part of the build graph.
 val node: NodeCodeBuilder

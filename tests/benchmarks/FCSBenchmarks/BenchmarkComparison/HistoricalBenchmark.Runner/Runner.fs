@@ -207,10 +207,10 @@ module Git =
     open LibGit2Sharp
             
     let clone (path : string) : Repository =
-        printfn $"Fetching 'dotnet/fsharp.git' in '{path}'..."
+        printfn $"Fetching 'vzarytovskii/fsharp.git' in '{path}'..."
         Repository.Init(path) |> ignore
         let repo = new Repository(path)
-        let remote = repo.Network.Remotes.Add("origin", "https://github.com/dotnet/fsharp.git")
+        let remote = repo.Network.Remotes.Add("origin", "https://github.com/vzarytovskii/fsharp.git")
         repo.Network.Fetch(remote.Name, [])
         repo
         

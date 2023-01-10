@@ -29,7 +29,8 @@ module internal FSharpClassificationTypes =
     let [<Literal>] DisposableLocalValue = "FSharp.DisposableLocalValue"
     let [<Literal>] DisposableTopLevelValue = "FSharp.DisposableTopLevelValue"
 
-    let getClassificationTypeName = function
+    let getClassificationTypeName t =
+        match t with
         | SemanticClassificationType.MutableRecordField
         | SemanticClassificationType.MutableVar -> MutableVar
         | SemanticClassificationType.DisposableType -> DisposableType

@@ -174,7 +174,7 @@ type Document with
 
     /// Get the semantic classifications of the given F# document.
     member this.GetFSharpSemanticClassificationAsync(userOpName) =
-        async {
+        backgroundTask {
             let! checker, _, _, projectOptions = this.GetFSharpCompilationOptionsAsync(userOpName)
             match! checker.GetBackgroundSemanticClassificationForFile(this.FilePath, projectOptions) with
             | Some results -> return results

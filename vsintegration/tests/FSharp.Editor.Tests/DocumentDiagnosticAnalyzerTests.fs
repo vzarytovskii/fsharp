@@ -6,6 +6,7 @@ open NUnit.Framework
 open Microsoft.CodeAnalysis
 open Microsoft.VisualStudio.FSharp.Editor
 open FSharp.Editor.Tests.Helpers
+open System.Threading
 
 [<TestFixture>]
 type DocumentDiagnosticAnalyzerTests() =
@@ -14,23 +15,24 @@ type DocumentDiagnosticAnalyzerTests() =
     let endMarker = "(*end*)"
 
     let getDiagnostics (fileContents: string) =
-        async {
-            let document, _ =
-                RoslynTestHelpers.CreateSingleDocumentSolution(filePath, fileContents)
+        let diagnostics = 
+            backgroundTask {
+                let document, _ =
+                    RoslynTestHelpers.CreateSingleDocumentSolution(filePath, fileContents)
 
-            let! syntacticDiagnostics = FSharpDocumentDiagnosticAnalyzer.GetDiagnostics(document, DiagnosticsType.Syntax)
-            let! semanticDiagnostics = FSharpDocumentDiagnosticAnalyzer.GetDiagnostics(document, DiagnosticsType.Semantic)
-            return syntacticDiagnostics.AddRange(semanticDiagnostics)
-        }
-        |> Async.RunSynchronously
+                let! syntacticDiagnostics = FSharpDocumentDiagnosticAnalyzer.GetDiagnostics(document, DiagnosticsType.Syntax, CancellationToken.None)
+                let! semanticDiagnostics = FSharpDocumentDiagnosticAnalyzer.GetDiagnostics(document, DiagnosticsType.Semantic, CancellationToken.None)
+                return syntacticDiagnostics.AddRange(semanticDiagnostics)
+            }
+        diagnostics.Result
 
-    member private this.VerifyNoErrors(fileContents: string, ?additionalFlags: string[]) =
+    member private _.VerifyNoErrors(fileContents: string, ?additionalFlags: string[]) =
         let errors = getDiagnostics fileContents
 
         if not errors.IsEmpty then
             Assert.Fail("There should be no errors generated", errors)
 
-    member private this.VerifyErrorAtMarker(fileContents: string, expectedMarker: string, ?expectedMessage: string) =
+    member private _.VerifyErrorAtMarker(fileContents: string, expectedMarker: string, ?expectedMessage: string) =
         let errors =
             getDiagnostics fileContents
             |> Seq.filter (fun e -> e.Severity = DiagnosticSeverity.Error)

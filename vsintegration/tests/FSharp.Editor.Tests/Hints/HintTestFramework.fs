@@ -8,6 +8,7 @@ open Microsoft.VisualStudio.FSharp.Editor.Hints
 open Microsoft.CodeAnalysis.Text
 open Hints
 open FSharp.Editor.Tests.Helpers
+open System.Threading
 
 module HintTestFramework =
 

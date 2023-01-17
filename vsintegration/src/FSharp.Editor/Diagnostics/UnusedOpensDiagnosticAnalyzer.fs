@@ -15,6 +15,7 @@ open FSharp.Compiler.EditorServices
 open FSharp.Compiler.Text
 
 open Microsoft.CodeAnalysis.ExternalAccess.FSharp.Diagnostics
+open System.Threading.Tasks
 
 [<Export(typeof<IFSharpUnusedOpensDiagnosticAnalyzer>)>]
 type internal UnusedOpensDiagnosticAnalyzer
@@ -22,33 +23,33 @@ type internal UnusedOpensDiagnosticAnalyzer
     (
     ) =
 
-    static member GetUnusedOpenRanges(document: Document) : Async<Option<range list>> =
-        asyncMaybe {
-            do! Option.guard document.Project.IsFSharpCodeFixesUnusedOpensEnabled
-            let! sourceText = document.GetTextAsync()
-            let! _, checkResults = document.GetFSharpParseAndCheckResultsAsync(nameof(UnusedOpensDiagnosticAnalyzer)) |> liftAsync
-            let! unusedOpens = UnusedOpens.getUnusedOpens(checkResults, fun lineNumber -> sourceText.Lines.[Line.toZ lineNumber].ToString()) |> liftAsync
-            return unusedOpens
+    static member GetUnusedOpenRanges(document: Document) : Task<range list> =
+        backgroundTask {
+            if document.Project.IsFSharpCodeFixesUnusedOpensEnabled then
+                let! sourceText = document.GetTextAsync()
+                let! _, checkResults = document.GetFSharpParseAndCheckResultsAsync(nameof(UnusedOpensDiagnosticAnalyzer))
+                let! unusedOpens = UnusedOpens.getUnusedOpens(checkResults, fun lineNumber -> sourceText.Lines.[Line.toZ lineNumber].ToString())
+                return unusedOpens
+            else
+                return List.empty
         } 
 
     interface IFSharpUnusedOpensDiagnosticAnalyzer with
 
         member _.AnalyzeSemanticsAsync(descriptor, document: Document, cancellationToken: CancellationToken) =
-            if document.Project.IsFSharpMiscellaneousOrMetadata && not document.IsFSharpScript then Tasks.Task.FromResult(ImmutableArray.Empty)
+            if document.Project.IsFSharpMiscellaneousOrMetadata && not document.IsFSharpScript then
+                Task.FromResult(ImmutableArray.Empty)
             else
-
-            asyncMaybe {
-                do Trace.TraceInformation("{0:n3} (start) UnusedOpensAnalyzer", DateTime.Now.TimeOfDay.TotalSeconds)
-                let! sourceText = document.GetTextAsync()
-                let! unusedOpens = UnusedOpensDiagnosticAnalyzer.GetUnusedOpenRanges(document)
+                backgroundTask {
+                    do Trace.TraceInformation("{0:n3} (start) UnusedOpensAnalyzer", DateTime.Now.TimeOfDay.TotalSeconds)
+                    let! sourceText = document.GetTextAsync(cancellationToken)
+                    let! unusedOpens = UnusedOpensDiagnosticAnalyzer.GetUnusedOpenRanges(document)
             
-                return 
-                    unusedOpens
-                    |> List.map (fun range ->
-                          Diagnostic.Create(
-                             descriptor,
-                             RoslynHelpers.RangeToLocation(range, sourceText, document.FilePath)))
-                    |> Seq.toImmutableArray
-            } 
-            |> Async.map (Option.defaultValue ImmutableArray.Empty)
-            |> RoslynHelpers.StartAsyncAsTask cancellationToken
+                    return
+                        unusedOpens
+                        |> List.map (fun range ->
+                              Diagnostic.Create(
+                                 descriptor,
+                                 RoslynHelpers.RangeToLocation(range, sourceText, document.FilePath)))
+                        |> Seq.toImmutableArray
+                }

@@ -175,14 +175,14 @@ module internal XmlDocumentation =
                 EnsureHardLine collector
                 WriteElement collector el
 
-        member this.CollectParameter(collector: ITaggedTextCollector, paramName: string) =
+        member _.CollectParameter(collector: ITaggedTextCollector, paramName: string) =
             match tryFindParameter paramName with
             | None -> ()
             | Some el ->
                 EnsureHardLine collector
                 WriteNodes collector (el.Nodes())
            
-        member this.CollectParameters(collector: ITaggedTextCollector) =
+        member _.CollectParameters(collector: ITaggedTextCollector) =
             for p in doc.Descendants(XName.op_Implicit "param") do
                 match p.Attribute(XName.op_Implicit "name") with
                 | null -> ()
@@ -193,7 +193,7 @@ module internal XmlDocumentation =
                     collector.Add(TaggedText.space)
                     WriteNodes collector (p.Nodes())
 
-        member this.CollectExceptions(collector: ITaggedTextCollector) =
+        member _.CollectExceptions(collector: ITaggedTextCollector) =
             let mutable started = false;
             for p in doc.Descendants(XName.op_Implicit "exception") do
                 match p.Attribute(XName.op_Implicit "cref") with

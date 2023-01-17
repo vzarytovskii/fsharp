@@ -54,17 +54,15 @@ type internal FSharpDocumentDiagnosticAnalyzer
                 hash 
         }
 
-    static member GetDiagnostics(document: Document, diagnosticType: DiagnosticsType) = 
-        async {
-            let! ct = Async.CancellationToken
-
+    static member GetDiagnostics(document: Document, diagnosticType: DiagnosticsType, ct: CancellationToken) = 
+        backgroundTask {
             let! parseResults = document.GetFSharpParseResultsAsync("GetDiagnostics")
 
             let! sourceText = document.GetTextAsync(ct) |> Async.AwaitTask
             let filePath = document.FilePath
 
             let! errors = 
-                async {
+                backgroundTask {
                     match diagnosticType with
                     | DiagnosticsType.Semantic ->
                         let! _, checkResults = document.GetFSharpParseAndCheckResultsAsync("GetDiagnostics")
@@ -106,26 +104,19 @@ type internal FSharpDocumentDiagnosticAnalyzer
 
     interface IFSharpDocumentDiagnosticAnalyzer with
 
-        member this.AnalyzeSyntaxAsync(document: Document, cancellationToken: CancellationToken): Task<ImmutableArray<Diagnostic>> =
-            if document.Project.IsFSharpMetadata then Task.FromResult(ImmutableArray.Empty)
+        member _.AnalyzeSyntaxAsync(document: Document, cancellationToken: CancellationToken): Task<ImmutableArray<Diagnostic>> =
+            if document.Project.IsFSharpMetadata then
+                Task.FromResult(ImmutableArray.Empty)
             else
+                backgroundTask {
+                    return! FSharpDocumentDiagnosticAnalyzer.GetDiagnostics(document, DiagnosticsType.Syntax, cancellationToken)
+                }
+                
 
-            asyncMaybe {
-                return! 
-                    FSharpDocumentDiagnosticAnalyzer.GetDiagnostics(document, DiagnosticsType.Syntax)
-                    |> liftAsync
-            } 
-            |> Async.map (Option.defaultValue ImmutableArray<Diagnostic>.Empty)
-            |> RoslynHelpers.StartAsyncAsTask cancellationToken
-
-        member this.AnalyzeSemanticsAsync(document: Document, cancellationToken: CancellationToken): Task<ImmutableArray<Diagnostic>> =
-            if document.Project.IsFSharpMiscellaneousOrMetadata && not document.IsFSharpScript then Task.FromResult(ImmutableArray.Empty)
+        member _.AnalyzeSemanticsAsync(document: Document, cancellationToken: CancellationToken): Task<ImmutableArray<Diagnostic>> =
+            if document.Project.IsFSharpMiscellaneousOrMetadata && not document.IsFSharpScript then
+                Task.FromResult(ImmutableArray.Empty)
             else
-
-            asyncMaybe {
-                return! 
-                    FSharpDocumentDiagnosticAnalyzer.GetDiagnostics(document, DiagnosticsType.Semantic)
-                    |> liftAsync
-            }
-            |> Async.map (Option.defaultValue ImmutableArray<Diagnostic>.Empty)
-            |> RoslynHelpers.StartAsyncAsTask cancellationToken
+                backgroundTask {
+                    return! FSharpDocumentDiagnosticAnalyzer.GetDiagnostics(document, DiagnosticsType.Semantic, cancellationToken)
+                }

@@ -41,11 +41,12 @@ module HintTestFramework =
         RoslynTestHelpers.CreateTwoDocumentSolution("test.fsi", SourceText.From fsiCode, "test.fs", SourceText.From fsCode)
 
     let getHints document hintKinds =
-        async {
-            let! hints = HintService.getHintsForDocument document hintKinds "test" CancellationToken.None
-            return hints |> Seq.map convert
-        }
-        |> Async.RunSynchronously
+        let hints = 
+            backgroundTask {
+                let! hints = HintService.getHintsForDocument document hintKinds "test" CancellationToken.None
+                return hints |> Seq.map convert
+            }
+        hints.Result
 
     let getTypeHints document =
         getHints document (Set.empty.Add(HintKind.TypeHint))

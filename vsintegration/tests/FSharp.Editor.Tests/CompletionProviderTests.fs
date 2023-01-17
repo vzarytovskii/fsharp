@@ -42,9 +42,7 @@ module CompletionProviderTests =
             RoslynTestHelpers.CreateSingleDocumentSolution(filePath, fileContents, options = options)
 
         let results =
-            FSharpCompletionProvider.ProvideCompletionsAsyncAux(document, caretPosition, (fun _ -> []))
-            |> Async.RunSynchronously
-            |> Option.defaultValue (ResizeArray())
+            FSharpCompletionProvider.ProvideCompletionsAsyncAux(document, caretPosition, (fun _ -> [])).Result
             |> Seq.map (fun result -> result.DisplayText)
 
         let expectedFound = expected |> List.filter results.Contains
@@ -89,9 +87,7 @@ module CompletionProviderTests =
             RoslynTestHelpers.CreateSingleDocumentSolution(filePath, fileContents, options = options)
 
         let actual =
-            FSharpCompletionProvider.ProvideCompletionsAsyncAux(document, caretPosition, (fun _ -> []))
-            |> Async.RunSynchronously
-            |> Option.defaultValue (ResizeArray())
+            FSharpCompletionProvider.ProvideCompletionsAsyncAux(document, caretPosition, (fun _ -> [])).Result
             |> Seq.toList
             // sort items as Roslyn do - by `SortText`
             |> List.sortBy (fun x -> x.SortText)

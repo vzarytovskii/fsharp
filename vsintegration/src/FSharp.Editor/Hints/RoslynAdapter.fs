@@ -21,7 +21,7 @@ type internal RoslynAdapter
 
     interface IFSharpInlineHintsService with
         member _.GetInlineHintsAsync(document, _, cancellationToken) =
-            async {
+            backgroundTask {
                 let hintKinds = OptionParser.getHintKinds settings.Advanced
 
                 if hintKinds.IsEmpty then
@@ -40,4 +40,4 @@ type internal RoslynAdapter
                         |> Seq.map (NativeToRoslynHintConverter.convert sourceText)
                     
                     return roslynHints.ToImmutableArray()
-            } |> RoslynHelpers.StartAsyncAsTask cancellationToken
+            }

@@ -20,20 +20,20 @@ type internal UnusedDeclarationsAnalyzer
     interface IFSharpUnusedDeclarationsDiagnosticAnalyzer with
 
         member _.AnalyzeSemanticsAsync(descriptor, document, cancellationToken) =
-            if document.Project.IsFSharpMiscellaneousOrMetadata && not document.IsFSharpScript then Threading.Tasks.Task.FromResult(ImmutableArray.Empty)
-            else
-
-            asyncMaybe {
-                do! Option.guard document.Project.IsFSharpCodeFixesUnusedDeclarationsEnabled
-
-                do Trace.TraceInformation("{0:n3} (start) UnusedDeclarationsAnalyzer", DateTime.Now.TimeOfDay.TotalSeconds)
-                let! _, checkResults = document.GetFSharpParseAndCheckResultsAsync(nameof(UnusedDeclarationsAnalyzer)) |> liftAsync
-                let! unusedRanges = UnusedDeclarations.getUnusedDeclarations( checkResults, (isScriptFile document.FilePath)) |> liftAsync
-                let! sourceText = document.GetTextAsync()
-                return
-                    unusedRanges
-                    |> Seq.map (fun m -> Diagnostic.Create(descriptor, RoslynHelpers.RangeToLocation(m, sourceText, document.FilePath)))
-                    |> Seq.toImmutableArray
-            }
-            |> Async.map (Option.defaultValue ImmutableArray.Empty)
-            |> RoslynHelpers.StartAsyncAsTask cancellationToken
+            if document.Project.IsFSharpMiscellaneousOrMetadata && not document.IsFSharpScript then
+                Threading.Tasks.Task.FromResult(ImmutableArray.Empty)
+            else     
+                backgroundTask {
+                    cancellationToken.ThrowIfCancellationRequested()
+                    if document.Project.IsFSharpCodeFixesUnusedDeclarationsEnabled then
+                        do Trace.TraceInformation("{0:n3} (start) UnusedDeclarationsAnalyzer", DateTime.Now.TimeOfDay.TotalSeconds)
+                        let! _, checkResults = document.GetFSharpParseAndCheckResultsAsync(nameof(UnusedDeclarationsAnalyzer))
+                        let! unusedRanges = UnusedDeclarations.getUnusedDeclarations( checkResults, (isScriptFile document.FilePath))
+                        let! sourceText = document.GetTextAsync()
+                        return
+                            unusedRanges
+                            |> Seq.map (fun m -> Diagnostic.Create(descriptor, RoslynHelpers.RangeToLocation(m, sourceText, document.FilePath)))
+                            |> Seq.toImmutableArray
+                    else
+                        return ImmutableArray.Empty
+                }

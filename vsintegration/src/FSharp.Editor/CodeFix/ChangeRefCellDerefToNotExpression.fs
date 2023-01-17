@@ -7,6 +7,7 @@ open System.Threading.Tasks
 
 open Microsoft.CodeAnalysis.Text
 open Microsoft.CodeAnalysis.CodeFixes
+open FSharp.Compiler.CodeAnalysis
 
 [<ExportCodeFixProvider(FSharpConstants.FSharpLanguageName, Name = "ChangeRefCellDerefToNotExpression"); Shared>]
 type internal FSharpChangeRefCellDerefToNotExpressionCodeFixProvider
@@ -17,17 +18,27 @@ type internal FSharpChangeRefCellDerefToNotExpressionCodeFixProvider
     
     let fixableDiagnosticIds = set ["FS0001"]
 
+    let tryGetDerefTextSpan (parseResults: FSharpParseFileResults) filepath span sourceText =
+        let errorRange = RoslynHelpers.TextSpanToFSharpRange(filepath, span, sourceText)
+        let derefRange = parseResults.TryRangeOfRefCellDereferenceContainingPos errorRange.Start
+        derefRange |> Option.bind (fun derefRange ->
+           RoslynHelpers.TryFSharpRangeToTextSpan(sourceText, derefRange)
+        )
+
     override _.FixableDiagnosticIds = Seq.toImmutableArray fixableDiagnosticIds
 
-    override this.RegisterCodeFixesAsync context : Task =
-        asyncMaybe {
+    override _.RegisterCodeFixesAsync context : Task =
+        backgroundTask {
             let document = context.Document
-            let! parseResults = document.GetFSharpParseResultsAsync(nameof(FSharpChangeRefCellDerefToNotExpressionCodeFixProvider)) |> liftAsync
+            let! parseResults = document.GetFSharpParseResultsAsync(nameof(FSharpChangeRefCellDerefToNotExpressionCodeFixProvider))
             let! sourceText = context.Document.GetTextAsync(context.CancellationToken)
 
-            let errorRange = RoslynHelpers.TextSpanToFSharpRange(document.FilePath, context.Span, sourceText)
-            let! derefRange = parseResults.TryRangeOfRefCellDereferenceContainingPos errorRange.Start
-            let! derefSpan = RoslynHelpers.TryFSharpRangeToTextSpan(sourceText, derefRange)
+            let derefSpan = tryGetDerefTextSpan parseResults document.FilePath context.Span sourceText
+            
+            if derefSpan.IsNone then
+                return ()
+
+            let derefSpan = derefSpan.Value
             
             let title = SR.UseNotForNegation()
 
@@ -44,5 +55,3 @@ type internal FSharpChangeRefCellDerefToNotExpressionCodeFixProvider
 
             context.RegisterCodeFix(codeFix, diagnostics)
         }
-        |> Async.Ignore
-        |> RoslynHelpers.StartAsyncUnitAsTask(context.CancellationToken) 

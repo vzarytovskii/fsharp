@@ -152,6 +152,7 @@ type internal FSharpClassificationService
             }
 
         member _.AddSemanticClassificationsAsync(document: Document, textSpan: TextSpan, result: List<ClassifiedSpan>, cancellationToken: CancellationToken) =
+            let _ = 1
             backgroundTask {
                 use _logBlock = Logger.LogBlock(LogEditorFunctionId.Classification_Semantic)
 
@@ -173,7 +174,6 @@ type internal FSharpClassificationService
                     let! _, checkResults = document.GetFSharpParseAndCheckResultsAsync(nameof(IFSharpClassificationService))
                     let targetRange = RoslynHelpers.TextSpanToFSharpRange(document.FilePath, textSpan, sourceText)
                     let classificationData = checkResults.GetSemanticClassification (Some targetRange)
-                    do! System.Threading.Tasks.Task.Delay(1000)
                     addSemanticClassification sourceText textSpan classificationData result
             }
 

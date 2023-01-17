@@ -40,11 +40,10 @@ type Worker() =
 
         let actual =
             let x =
-                FSharpCompletionProvider.ProvideCompletionsAsyncAux(document, caretPosition, (fun _ -> []))
-                |> Async.RunSynchronously
+                FSharpCompletionProvider.ProvideCompletionsAsyncAux(document, caretPosition, (fun _ -> [])).Result
+                
 
             x
-            |> Option.defaultValue (ResizeArray())
             |> Seq.toList
             // sort items as Roslyn do - by `SortText`
             |> List.sortBy (fun x -> x.SortText)

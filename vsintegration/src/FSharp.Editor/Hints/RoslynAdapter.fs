@@ -27,7 +27,7 @@ type internal RoslynAdapter
                 if hintKinds.IsEmpty then
                     return ImmutableArray.Empty
                 else
-                    let! sourceText = document.GetTextAsync cancellationToken |> Async.AwaitTask
+                    let! sourceText = document.GetTextAsync cancellationToken
                     let! nativeHints =
                         HintService.getHintsForDocument 
                             sourceText

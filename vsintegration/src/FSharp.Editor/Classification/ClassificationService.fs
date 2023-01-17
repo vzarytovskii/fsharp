@@ -152,7 +152,6 @@ type internal FSharpClassificationService
             }
 
         member _.AddSemanticClassificationsAsync(document: Document, textSpan: TextSpan, result: List<ClassifiedSpan>, cancellationToken: CancellationToken) =
-            let _ = 1
             backgroundTask {
                 use _logBlock = Logger.LogBlock(LogEditorFunctionId.Classification_Semantic)
 

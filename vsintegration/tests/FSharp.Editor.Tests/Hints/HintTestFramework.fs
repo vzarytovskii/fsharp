@@ -2,7 +2,7 @@
 
 namespace FSharp.Editor.Tests.Hints
 
-open System.Threading
+open Microsoft.CodeAnalysis
 open Microsoft.VisualStudio.FSharp.Editor
 open Microsoft.VisualStudio.FSharp.Editor.Hints
 open Microsoft.CodeAnalysis.Text
@@ -40,10 +40,11 @@ module HintTestFramework =
     let getFsiAndFsDocuments (fsiCode: string) (fsCode: string) =
         RoslynTestHelpers.CreateTwoDocumentSolution("test.fsi", SourceText.From fsiCode, "test.fs", SourceText.From fsCode)
 
-    let getHints document hintKinds =
-        let hints = 
+    let getHints (document: Document) hintKinds =
+        let hints =
             backgroundTask {
-                let! hints = HintService.getHintsForDocument document hintKinds "test" CancellationToken.None
+                let! sourceText = document.GetTextAsync CancellationToken.None
+                let! hints = HintService.getHintsForDocument sourceText document hintKinds "test" CancellationToken.None
                 return hints |> Seq.map convert
             }
         hints.Result

@@ -34,7 +34,7 @@ module BuildGraphTests =
         let graphNode = 
             GraphNode(node { 
                 resetEventInAsync.Set() |> ignore
-                let! _ = NodeCode.AwaitWaitHandle_ForTesting(resetEvent)
+                let! _ = Node.AwaitWaitHandle_ForTesting(resetEvent)
                 return 1 
             })
 
@@ -42,13 +42,13 @@ module BuildGraphTests =
             node {
                 let! _ = graphNode.GetOrComputeValue()
                 ()
-            } |> NodeCode.StartAsTask_ForTesting
+            } |> Node.StartAsTask_ForTesting
 
         let task2 =
             node {
                 let! _ = graphNode.GetOrComputeValue()
                 ()
-            } |> NodeCode.StartAsTask_ForTesting
+            } |> Node.StartAsTask_ForTesting
 
         resetEventInAsync.WaitOne() |> ignore
         resetEvent.Set() |> ignore
@@ -100,7 +100,7 @@ module BuildGraphTests =
 
         Assert.shouldBeTrue weak.IsAlive
 
-        NodeCode.RunImmediateWithoutCancellation(graphNode.GetOrComputeValue())
+        Node.RunImmediateWithoutCancellation(graphNode.GetOrComputeValue())
         |> ignore
 
         GC.Collect(2, GCCollectionMode.Forced, true)
@@ -141,7 +141,7 @@ module BuildGraphTests =
 
         let ex =
             try
-                NodeCode.RunImmediate(work, ct = cts.Token)
+                Node.RunImmediate(work, ct = cts.Token)
                 |> ignore
                 failwith "Should have canceled"
             with
@@ -156,7 +156,7 @@ module BuildGraphTests =
 
         let graphNode = 
             GraphNode(node { 
-                let! _ = NodeCode.AwaitWaitHandle_ForTesting(resetEvent)
+                let! _ = Node.AwaitWaitHandle_ForTesting(resetEvent)
                 return 1 
             })
 
@@ -167,11 +167,11 @@ module BuildGraphTests =
                 cts.Cancel()
                 resetEvent.Set() |> ignore
             }
-            |> NodeCode.StartAsTask_ForTesting
+            |> Node.StartAsTask_ForTesting
 
         let ex =
             try
-                NodeCode.RunImmediate(graphNode.GetOrComputeValue(), ct = cts.Token)
+                Node.RunImmediate(graphNode.GetOrComputeValue(), ct = cts.Token)
                 |> ignore
                 failwith "Should have canceled"
             with
@@ -191,7 +191,7 @@ module BuildGraphTests =
         let graphNode = 
             GraphNode(node { 
                 computationCountBeforeSleep <- computationCountBeforeSleep + 1
-                let! _ = NodeCode.AwaitWaitHandle_ForTesting(resetEvent)
+                let! _ = Node.AwaitWaitHandle_ForTesting(resetEvent)
                 computationCount <- computationCount + 1
                 return 1 
             })
@@ -208,15 +208,15 @@ module BuildGraphTests =
 
         for i = 0 to requests - 1 do
             if i % 10 = 0 then
-                NodeCode.StartAsTask_ForTesting(work, ct = cts.Token)
+                Node.StartAsTask_ForTesting(work, ct = cts.Token)
                 |> tasks.Add
             else
-                NodeCode.StartAsTask_ForTesting(work)
+                Node.StartAsTask_ForTesting(work)
                 |> tasks.Add
 
         cts.Cancel()
         resetEvent.Set() |> ignore
-        NodeCode.RunImmediateWithoutCancellation(work)
+        Node.RunImmediateWithoutCancellation(work)
         |> ignore
 
         Assert.shouldBeTrue cts.IsCancellationRequested
@@ -237,7 +237,7 @@ module BuildGraphTests =
         let graphNode = 
             GraphNode(false, node { 
                 computationCountBeforeSleep <- computationCountBeforeSleep + 1
-                let! _ = NodeCode.AwaitWaitHandle_ForTesting(resetEvent)
+                let! _ = Node.AwaitWaitHandle_ForTesting(resetEvent)
                 computationCount <- computationCount + 1
                 return 1 
             })
@@ -254,15 +254,15 @@ module BuildGraphTests =
 
         for i = 0 to requests - 1 do
             if i % 10 = 0 then
-                NodeCode.StartAsTask_ForTesting(work, ct = cts.Token)
+                Node.StartAsTask_ForTesting(work, ct = cts.Token)
                 |> tasks.Add
             else
-                NodeCode.StartAsTask_ForTesting(work)
+                Node.StartAsTask_ForTesting(work)
                 |> tasks.Add
 
         cts.Cancel()
         resetEvent.Set() |> ignore
-        NodeCode.RunImmediateWithoutCancellation(work)
+        Node.RunImmediateWithoutCancellation(work)
         |> ignore
 
         Assert.shouldBeTrue cts.IsCancellationRequested

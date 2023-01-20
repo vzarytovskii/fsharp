@@ -363,7 +363,7 @@ module internal ResultOrException =
     val otherwise: f: (unit -> ResultOrException<'a>) -> x: ResultOrException<'a> -> ResultOrException<'a>
 
 [<RequireQualifiedAccess; Struct>]
-type internal ValueOrCancelled<'TResult> =
+type ValueOrCancelled<'TResult> =
     | Value of result: 'TResult
     | Cancelled of ``exception``: OperationCanceledException
 
@@ -372,9 +372,9 @@ type internal ValueOrCancelled<'TResult> =
 /// A cancellable computation may be cancelled via a CancellationToken, which is propagated implicitly.
 /// If cancellation occurs, it is propagated as data rather than by raising an OperationCanceledException.
 [<Struct>]
-type internal Cancellable<'T> = Cancellable of (CancellationToken -> ValueOrCancelled<'T>)
+type Cancellable<'T> = Cancellable of (CancellationToken -> ValueOrCancelled<'T>)
 
-module internal Cancellable =
+module Cancellable =
 
     /// Run a cancellable computation using the given cancellation token
     val inline run: ct: CancellationToken -> Cancellable<'T> -> ValueOrCancelled<'T>

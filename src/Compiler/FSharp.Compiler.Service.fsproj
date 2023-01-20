@@ -9,7 +9,8 @@
     <NoWarn>$(NoWarn);57</NoWarn> <!-- Experimental -->
     <NoWarn>$(NoWarn);75</NoWarn> <!-- InternalCommandLineOption -->
     <NoWarn>$(NoWarn);1204</NoWarn> <!-- This construct is for use in the FSharp.Core library and should not be used directly -->
-    <NoWarn>$(NoWarn);NU5125</NoWarn>
+    <NoWarn>$(NoWarn);3513</NoWarn> <!-- This construct is for use in the FSharp.Core library and should not be used directly -->
+    <NoWarn>$(NoWarn);NU5125</NoWarn> <!-- Resumable code invocation. Suppress this warning if you are defining new low-level resumable code in terms of existing resumable code. -->
     <AssemblyName>FSharp.Compiler.Service</AssemblyName>
     <AllowCrossTargeting>true</AllowCrossTargeting>
     <DefineConstants>$(DefineConstants);COMPILER</DefineConstants>

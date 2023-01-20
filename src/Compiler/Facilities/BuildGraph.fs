@@ -147,9 +147,9 @@ module internal NodeCodeBuilder =
     let internal node = NodeCodeBuilder()
 
 [<AutoOpen>]
-module internal Extensions =
+module Extensions =
 
-    type internal Awaiter<'TResult1, 'Awaiter
+    type Awaiter<'TResult1, 'Awaiter
          when 'Awaiter :> ICriticalNotifyCompletion
          and  'Awaiter: (member IsCompleted: bool)
          and  'Awaiter: (member GetResult: unit -> 'TResult1)> = 'Awaiter
@@ -322,6 +322,35 @@ type Node private () =
 
     static member RunImmediateWithoutCancellation(computation: NodeCode<'T>) =
         Node.RunImmediate(computation, CancellationToken.None)
+
+    static member StartAsTask_ForTesting(computation: NodeCode<'T>, ?ct: CancellationToken) =
+        let diagnosticsLogger = DiagnosticsThreadStatics.DiagnosticsLogger
+        let phase = DiagnosticsThreadStatics.BuildPhase
+
+        try
+            let work =
+                async {
+                    DiagnosticsThreadStatics.DiagnosticsLogger <- diagnosticsLogger
+                    DiagnosticsThreadStatics.BuildPhase <- phase
+                    return! computation |> Async.AwaitNodeCode
+                }
+
+            Async.StartAsTask(work, cancellationToken = defaultArg ct CancellationToken.None)
+        finally
+            DiagnosticsThreadStatics.DiagnosticsLogger <- diagnosticsLogger
+            DiagnosticsThreadStatics.BuildPhase <- phase
+
+    static member AwaitWaitHandle_ForTesting(waitHandle: WaitHandle) =
+        node {
+            let diagnosticsLogger = DiagnosticsThreadStatics.DiagnosticsLogger
+            let phase = DiagnosticsThreadStatics.BuildPhase
+
+            try
+                return! Async.AwaitWaitHandle(waitHandle)
+            finally
+                DiagnosticsThreadStatics.DiagnosticsLogger <- diagnosticsLogger
+                DiagnosticsThreadStatics.BuildPhase <- phase
+        }
 
 type private AgentMessage<'T> = GetValue of AsyncReplyChannel<Result<'T, Exception>> * callerCancellationToken: CancellationToken
 

@@ -410,7 +410,8 @@ type BackgroundCompiler
 
     let createAndGetBuilder (options, userOpName) =
         node {
-            let! ct = Node.CancellationToken
+            // TODO(vlza): Sort out cancellation token
+            let! ct = Async.CancellationToken
             let getBuilderNode = createBuilderNode (options, userOpName, ct)
             return! getBuilderNode.GetOrComputeValue()
         }

@@ -268,7 +268,7 @@ type TcInfoNode =
     static member FromState(state: TcInfoState) =
         let tcInfo = state.TcInfo
         let tcInfoExtras = state.TcInfoExtras
-        TcInfoNode(GraphNode(node.Return tcInfo), GraphNode(node.Return (tcInfo, defaultArg tcInfoExtras emptyTcInfoExtras)))
+        TcInfoNode(GraphNode(node { return tcInfo }), GraphNode(node { return (tcInfo, defaultArg tcInfoExtras emptyTcInfoExtras) }))
 
 /// Bound model of an underlying syntax and typed tree.
 [<Sealed>]
@@ -465,8 +465,8 @@ type BoundModel private (tcConfig: TcConfig,
     member private this.TypeCheck (partialCheck: bool) : NodeCode<TcInfoState> =
         match partialCheck, tcInfoStateOpt with
         | true, Some (PartialState _ as state)
-        | true, Some (FullState _ as state) -> node.Return state
-        | false, Some (FullState _ as state) -> node.Return state
+        | true, Some (FullState _ as state) ->  node { return state }
+        | false, Some (FullState _ as state) -> node { return state }
         | _ ->
 
         node {
@@ -509,7 +509,6 @@ type BoundModel private (tcConfig: TcConfig,
                                 (if partialCheck then TcResultsSink.NoSink else TcResultsSink.WithSink sink),
                                 prevTcState, input,
                                 partialCheck)
-                        |> NodeCode.FromCancellable
 
                     fileChecked.Trigger fileName
                     let newErrors = Array.append parseErrors (capturingDiagnosticsLogger.Diagnostics |> List.toArray)
@@ -874,7 +873,7 @@ module IncrementalBuilderHelpers =
                     return (tcInfo.tcEnvAtEndOfFile, defaultArg tcInfo.topAttribs EmptyTopAttrs, latestImplFile, tcInfo.latestCcuSigForFile)
                 }
             )
-            |> NodeCode.Sequential
+            |> Node.Sequential
 
         let results = results |> List.ofSeq
 
@@ -1072,7 +1071,7 @@ module IncrementalBuilderStateHelpers =
             | ValueSome(boundModel) when initialState.enablePartialTypeChecking && boundModel.BackingSignature.IsSome ->
                 let newBoundModel = boundModel.ClearTcInfoExtras()
                 { state with
-                    boundModels = state.boundModels.RemoveAt(slot).Insert(slot, GraphNode(node.Return newBoundModel))
+                    boundModels = state.boundModels.RemoveAt(slot).Insert(slot, GraphNode(node { return newBoundModel }))
                     stampedFileNames = state.stampedFileNames.SetItem(slot, StampFileNameTask cache fileInfo)
                 }
             | _ ->
@@ -1147,7 +1146,7 @@ type IncrementalBuilderState with
         let referencedAssemblies = initialState.referencedAssemblies
 
         let cache = TimeStampCache(defaultTimeStamp)
-        let initialBoundModel = GraphNode(node.Return initialBoundModel)
+        let initialBoundModel = GraphNode(node { return initialBoundModel })
         let boundModels = ImmutableArrayBuilder.create fileNames.Length
 
         for slot = 0 to fileNames.Length - 1 do
@@ -1237,7 +1236,7 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
 
     let checkFileTimeStamps (cache: TimeStampCache) =
         node {
-            let! ct = NodeCode.CancellationToken
+            let! ct = Node.CancellationToken
             setCurrentState currentState cache ct
         }
 
@@ -1317,7 +1316,9 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
         | Some (boundModel, timestamp) ->
             let projectTimeStamp = builder.GetLogicalTimeStampForFileInProject(slotOfFile)
             return PartialCheckResults(boundModel, timestamp, projectTimeStamp)
-        | None -> return! failwith "Expected results to be ready. (GetCheckResultsBeforeSlotInProject)."
+        | None ->
+            failwith "Expected results to be ready. (GetCheckResultsBeforeSlotInProject)."
+            return Unchecked.defaultof<_>
       }
 
     member builder.GetFullCheckResultsBeforeSlotInProject slotOfFile =
@@ -1330,7 +1331,9 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
             let! _ = boundModel.GetOrComputeTcInfoExtras()
             let projectTimeStamp = builder.GetLogicalTimeStampForFileInProject(slotOfFile)
             return PartialCheckResults(boundModel, timestamp, projectTimeStamp)
-        | None -> return! failwith "Expected results to be ready. (GetFullCheckResultsBeforeSlotInProject)."
+        | None ->
+            failwith "Expected results to be ready. (GetFullCheckResultsBeforeSlotInProject)."
+            return Unchecked.defaultof<_>
       }
 
     member builder.GetCheckResultsBeforeFileInProject fileName =

@@ -14,8 +14,8 @@ open Internal.Utilities.Library
 /// This is essentially cancellable async code where the only asynchronous waits are on nodes.
 /// When a node is evaluated the evaluation is run synchronously on the thread of the
 /// first requestor.
-[<NoEquality; NoComparison; Sealed>]
-type NodeCode<'T>
+[<NoEquality; NoComparison>]
+type NodeCode<'T> = unit -> Task<'T>
 
 type Async<'T> with
 

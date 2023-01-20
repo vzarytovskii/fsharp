@@ -2192,8 +2192,8 @@ and [<Sealed>] TcImports
 
             let runMethod =
                 match tcConfig.parallelReferenceResolution with
-                | ParallelReferenceResolution.On -> NodeCode.Parallel
-                | ParallelReferenceResolution.Off -> NodeCode.Sequential
+                | ParallelReferenceResolution.On -> Node.Parallel
+                | ParallelReferenceResolution.Off -> Node.Sequential
 
             let! results =
                 nms
@@ -2236,7 +2236,7 @@ and [<Sealed>] TcImports
                     ReportWarnings warns
 
                     tcImports.RegisterAndImportReferencedAssemblies(ctok, res)
-                    |> NodeCode.RunImmediateWithoutCancellation
+                    |> Node.RunImmediateWithoutCancellation
                     |> ignore
 
                     true
@@ -2557,7 +2557,7 @@ let RequireReferences (ctok, tcImports: TcImports, tcEnv, thisAssemblyName, reso
 
     let ccuinfos =
         tcImports.RegisterAndImportReferencedAssemblies(ctok, resolutions)
-        |> NodeCode.RunImmediateWithoutCancellation
+        |> Node.RunImmediateWithoutCancellation
 
     let asms =
         ccuinfos

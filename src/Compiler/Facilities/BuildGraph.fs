@@ -5,13 +5,253 @@ module FSharp.Compiler.BuildGraph
 open System
 open System.Threading
 open System.Threading.Tasks
-open System.Diagnostics
 open System.Globalization
 open FSharp.Compiler.DiagnosticsLogger
+open System.Runtime.CompilerServices
+open Microsoft.FSharp.Core.CompilerServices
+open Microsoft.FSharp.Core.CompilerServices.StateMachineHelpers
 open Internal.Utilities.Library
+open Internal.Utilities.Library.CancellableAutoOpens
 
 [<NoEquality; NoComparison>]
-type NodeCode<'T> = Node of Async<'T>
+type NodeCode<'T> = unit -> Task<'T>
+
+[<Struct; NoComparison; NoEquality>]
+type NodeCodeStateMachineData<'T> =
+    [<DefaultValue(false)>]
+    val mutable Result: 'T
+    [<DefaultValue(false)>]
+    val mutable MethodBuilder: AsyncTaskMethodBuilder<'T>
+and NodeCodeStateMachine<'TOverall> = ResumableStateMachine<NodeCodeStateMachineData<'TOverall>>
+and NodeCodeResumptionFunc<'TOverall> = ResumptionFunc<NodeCodeStateMachineData<'TOverall>>
+and NodeCodeResumptionDynamicInfo<'TOverall> = ResumptionDynamicInfo<NodeCodeStateMachineData<'TOverall>>
+and NodeCodeCode<'TOverall, 'T> = ResumableCode<NodeCodeStateMachineData<'TOverall>, 'T>
+
+[<NoComparison; NoEquality>]
+type NodeCodeBuilder() =
+ 
+    member inline _.Delay(generator: unit -> NodeCodeCode<'TOverall, 'T>) : NodeCodeCode<'TOverall, 'T> =
+        NodeCodeCode<'TOverall, 'T>(fun sm -> (generator ()).Invoke(&sm))
+
+    [<DefaultValue>]
+    member inline _.Zero() : NodeCodeCode<'TOverall, unit> = ResumableCode.Zero()
+
+    member inline _.Return(value: 'T) : NodeCodeCode<'T, 'T> =
+        NodeCodeCode<'T, _>(fun sm -> sm.Data.Result <- value; true)
+
+    member inline _.Combine(task1: NodeCodeCode<'TOverall, unit>, task2: NodeCodeCode<'TOverall, 'T>) : NodeCodeCode<'TOverall, 'T> =
+        ResumableCode.Combine(task1, task2)
+
+    member inline _.While([<InlineIfLambda>]guard: unit -> bool, body: NodeCodeCode<'TOverall, unit>) : NodeCodeCode<'TOverall, unit> =
+        ResumableCode.While(guard, body)
+
+    member inline _.TryWith(body: NodeCodeCode<'TOverall, 'T>, [<InlineIfLambda>] catch: exn -> NodeCodeCode<'TOverall, 'T>) : NodeCodeCode<'TOverall, 'T> =
+        ResumableCode.TryWith(body, catch)
+
+    member inline _.TryFinally(body: NodeCodeCode<'TOverall, 'T>, [<InlineIfLambda>] compensation: unit -> unit) : NodeCodeCode<'TOverall, 'T> =
+        ResumableCode.TryFinally( body, ResumableCode<_, _>(fun _ -> compensation (); true))
+
+    member inline _.For (sequence: seq<'T>, [<InlineIfLambda>]body: 'T -> NodeCodeCode<'TOverall, unit>) : NodeCodeCode<'TOverall, unit> =
+        ResumableCode.For(sequence, body)
+
+    static member inline RunDynamic(code: NodeCodeCode<'T, 'T>) : NodeCode<'T> =
+        let mutable sm = NodeCodeStateMachine<'T>()
+        let initialResumptionFunc = NodeCodeResumptionFunc<'T>(fun sm -> code.Invoke(&sm))
+
+        let resumptionInfo =
+            { new NodeCodeResumptionDynamicInfo<'T>(initialResumptionFunc) with
+                member info.MoveNext(sm) =
+                    let mutable savedExn = null
+
+                    try
+                        sm.ResumptionDynamicInfo.ResumptionData <- null
+                        let step = info.ResumptionFunc.Invoke(&sm)
+
+                        if step then
+                            sm.Data.MethodBuilder.SetResult(sm.Data.Result)
+                        else
+                            let mutable awaiter =
+                                sm.ResumptionDynamicInfo.ResumptionData
+                                :?> ICriticalNotifyCompletion
+
+                            assert not (isNull awaiter)
+                            sm.Data.MethodBuilder.AwaitUnsafeOnCompleted(&awaiter, &sm)
+
+                    with exn ->
+                        savedExn <- exn
+                    match savedExn with
+                    | null -> ()
+                    | exn -> sm.Data.MethodBuilder.SetException exn
+
+                member _.SetStateMachine(sm, state) =
+                    sm.Data.MethodBuilder.SetStateMachine(state)
+            }
+
+        fun () ->
+            sm.ResumptionDynamicInfo <- resumptionInfo
+            sm.Data.MethodBuilder <- AsyncTaskMethodBuilder<'T>.Create ()
+            sm.Data.MethodBuilder.Start(&sm)
+            sm.Data.MethodBuilder.Task
+
+    member inline _.Run(code: NodeCodeCode<'T, 'T>) : NodeCode<'T> =
+        if __useResumableCode then
+            __stateMachine<NodeCodeStateMachineData<'T>, NodeCode<'T>>
+                (MoveNextMethodImpl<_>(fun sm ->
+                    __resumeAt sm.ResumptionPoint
+
+                    try
+                        let __stack_code_fin = code.Invoke(&sm)
+
+                        if __stack_code_fin then
+                            sm.Data.MethodBuilder.SetResult(sm.Data.Result)
+                    with exn ->
+                        sm.Data.MethodBuilder.SetException exn
+                ))
+                (SetStateMachineMethodImpl<_>(fun sm state ->
+                    sm.Data.MethodBuilder.SetStateMachine(state)
+                ))
+                (AfterCode<_, NodeCode<'T>>(fun sm ->
+                    if
+                        isNull SynchronizationContext.Current
+                        && obj.ReferenceEquals(TaskScheduler.Current, TaskScheduler.Default)
+                    then
+                        let mutable sm = sm
+
+                        fun () ->
+                            sm.Data.MethodBuilder <- AsyncTaskMethodBuilder<'T>.Create ()
+                            sm.Data.MethodBuilder.Start(&sm)
+                            sm.Data.MethodBuilder.Task
+                    else
+                        let sm = sm // copy
+
+                        fun () ->
+                            Task.Run<'T>(fun () ->
+                                let mutable sm = sm
+                                sm.Data.MethodBuilder <- AsyncTaskMethodBuilder<'T>.Create ()
+                                sm.Data.MethodBuilder.Start(&sm)
+                                sm.Data.MethodBuilder.Task
+                            )
+                ))
+        else
+            if
+                isNull SynchronizationContext.Current
+                && obj.ReferenceEquals(TaskScheduler.Current, TaskScheduler.Default)
+            then
+                NodeCodeBuilder.RunDynamic(code)
+            else
+
+                fun () -> Task.Run<'T>(fun () -> NodeCodeBuilder.RunDynamic (code) ())
+
+[<AutoOpen>]
+module internal NodeCodeBuilder =
+    let internal node = NodeCodeBuilder()
+
+[<AutoOpen>]
+module internal Extensions =
+
+    type internal Awaiter<'TResult1, 'Awaiter
+         when 'Awaiter :> ICriticalNotifyCompletion
+         and  'Awaiter: (member IsCompleted: bool)
+         and  'Awaiter: (member GetResult: unit -> 'TResult1)> = 'Awaiter
+
+    type internal NodeCodeBuilder with
+        
+        [<NoEagerConstraintApplication>]
+        static member inline BindDynamic<'TResult1, 'TResult2, 'Awaiter, 'TOverall when Awaiter<'TResult1, 'Awaiter>>
+            (sm: byref<_>, [<InlineIfLambda>] getAwaiter: unit -> 'Awaiter, [<InlineIfLambda>] continuation: ('TResult1 -> NodeCodeCode<'TOverall, 'TResult2>)) : bool =
+
+            let mutable awaiter = getAwaiter ()
+
+            let cont =
+                (NodeCodeResumptionFunc<'TOverall>(fun sm ->
+                    let result = awaiter.GetResult()
+                    (continuation result).Invoke(&sm)
+                ))
+
+            if awaiter.IsCompleted then
+                cont.Invoke(&sm)
+            else
+                sm.ResumptionDynamicInfo.ResumptionData <-
+                    (awaiter :> ICriticalNotifyCompletion)
+
+                sm.ResumptionDynamicInfo.ResumptionFunc <- cont
+                false
+
+        [<NoEagerConstraintApplication>]
+        member inline _.Bind<'TResult1, 'TResult2, 'Awaiter, 'TOverall when Awaiter<'TResult1, 'Awaiter>>
+            ([<InlineIfLambda>] getAwaiter: unit -> 'Awaiter,
+             [<InlineIfLambda>] continuation: ('TResult1 -> NodeCodeCode<'TOverall, 'TResult2>)) : NodeCodeCode<'TOverall, 'TResult2> =
+
+            NodeCodeCode<'TOverall, _>(fun sm ->
+                if __useResumableCode then
+                    //-- RESUMABLE CODE START
+                    let mutable awaiter = getAwaiter ()
+
+                    let mutable __stack_fin = true
+
+                    if not awaiter.IsCompleted then
+                        // This will yield with __stack_yield_fin = false
+                        // This will resume with __stack_yield_fin = true
+                        let __stack_yield_fin = ResumableCode.Yield().Invoke(&sm)
+                        __stack_fin <- __stack_yield_fin
+
+                    if __stack_fin then
+                        let result = awaiter.GetResult()
+                        (continuation result).Invoke(&sm)
+                    else
+                        sm.Data.MethodBuilder.AwaitUnsafeOnCompleted(&awaiter, &sm)
+                        false
+                else
+                    NodeCodeBuilder.BindDynamic<'TResult1, 'TResult2, 'Awaiter, 'TOverall>(
+                        &sm,
+                        getAwaiter,
+                        continuation
+                    )
+            )
+
+        [<NoEagerConstraintApplication>]
+        member inline this.ReturnFrom<'TResult1, 'TResult2, 'Awaiter, 'TOverall when Awaiter<'TResult1, 'Awaiter>>
+            ([<InlineIfLambda>] getAwaiter: unit -> 'Awaiter) : NodeCodeCode<_, _> =
+            this.Bind((fun () -> getAwaiter ()), (fun v -> this.Return v))
+
+        [<NoEagerConstraintApplication>]
+        member inline this.BindReturn<'TResult1, 'TResult2, 'Awaiter, 'TOverall when Awaiter<'TResult1, 'Awaiter>>
+            ([<InlineIfLambda>] getAwaiter: unit -> 'Awaiter, [<InlineIfLambda>] f) : NodeCodeCode<'TResult2, 'TResult2> =
+            this.Bind((fun () -> getAwaiter ()), (fun v -> this.Return(f v)))
+
+        
+        member inline _.Source(nodeCode: NodeCode<_>) = (nodeCode ()).GetAwaiter
+        member inline _.Source(s: #seq<_>) : #seq<_> = s
+        member inline _.Source(task: Task) = task.GetAwaiter
+        member inline _.Source(task: Task<_>) = task.GetAwaiter
+        member inline this.Source(async: Async<_>) = this.Source(async |> Async.StartAsTask)
+        member inline this.Source(cancellable: Cancellable<_>) = this.Source(Cancellable.toAsync cancellable)
+
+        member inline _.Using<'Resource, 'TOverall, 'T when 'Resource :> IDisposable>
+            (resource: 'Resource, [<InlineIfLambda>] body: 'Resource -> NodeCodeCode<'TOverall, 'T>) =
+            ResumableCode.Using(resource, body)
+
+        (*[<NoEagerConstraintApplication>]
+        member inline this.MergeSources<'TResult1, 'TResult2, 'Awaiter1, 'Awaiter2
+            when Awaiter<'TResult1, 'Awaiter1>
+            and  Awaiter<'TResult2, 'Awaiter2>>
+            (
+                [<InlineIfLambda>] left: unit -> ^Awaiter1,
+                [<InlineIfLambda>] right: unit -> ^Awaiter2
+            ) : unit -> TaskAwaiter<'TResult1 * 'TResult2> =
+
+            let! builder = 
+                node {
+                    let leftStarted = left ()
+                    let rightStarted = right ()
+                    let! leftResult = leftStarted
+                    let! rightResult = rightStarted
+                    return leftResult, rightResult
+                }
+            return builder.GetAwaiter()*)
+
+type Microsoft.FSharp.Control.TaskBuilderBase with
+    member inline this.ReturnFrom(nodeCode: NodeCode<'T>) = this.ReturnFrom(nodeCode ())
 
 let wrapThreadStaticInfo computation =
     async {
@@ -19,168 +259,23 @@ let wrapThreadStaticInfo computation =
         let phase = DiagnosticsThreadStatics.BuildPhase
 
         try
-            return! computation
+            return! (computation() |> Async.AwaitTask)
         finally
             DiagnosticsThreadStatics.DiagnosticsLogger <- diagnosticsLogger
             DiagnosticsThreadStatics.BuildPhase <- phase
     }
 
 type Async<'T> with
+    static member AwaitNodeCode(computation: NodeCode<'T>) =
+        wrapThreadStaticInfo computation
 
-    static member AwaitNodeCode(node: NodeCode<'T>) =
-        match node with
-        | Node (computation) -> wrapThreadStaticInfo computation
+[<RequireQualifiedAccess>]
+type Node private () =
 
-[<Sealed>]
-type NodeCodeBuilder() =
-
-    static let zero = Node(async.Zero())
-
-    [<DebuggerHidden; DebuggerStepThrough>]
-    member _.Zero() : NodeCode<unit> = zero
-
-    [<DebuggerHidden; DebuggerStepThrough>]
-    member _.Delay(f: unit -> NodeCode<'T>) =
-        Node(
-            async.Delay(fun () ->
-                match f () with
-                | Node (p) -> p)
-        )
-
-    [<DebuggerHidden; DebuggerStepThrough>]
-    member _.Return value = Node(async.Return(value))
-
-    [<DebuggerHidden; DebuggerStepThrough>]
-    member _.ReturnFrom(computation: NodeCode<_>) = computation
-
-    [<DebuggerHidden; DebuggerStepThrough>]
-    member _.Bind(Node (p): NodeCode<'a>, binder: 'a -> NodeCode<'b>) : NodeCode<'b> =
-        Node(
-            async.Bind(
-                p,
-                fun x ->
-                    match binder x with
-                    | Node p -> p
-            )
-        )
-
-    [<DebuggerHidden; DebuggerStepThrough>]
-    member _.TryWith(Node (p): NodeCode<'T>, binder: exn -> NodeCode<'T>) : NodeCode<'T> =
-        Node(
-            async.TryWith(
-                p,
-                fun ex ->
-                    match binder ex with
-                    | Node p -> p
-            )
-        )
-
-    [<DebuggerHidden; DebuggerStepThrough>]
-    member _.TryFinally(Node (p): NodeCode<'T>, binder: unit -> unit) : NodeCode<'T> = Node(async.TryFinally(p, binder))
-
-    [<DebuggerHidden; DebuggerStepThrough>]
-    member _.For(xs: 'T seq, binder: 'T -> NodeCode<unit>) : NodeCode<unit> =
-        Node(
-            async.For(
-                xs,
-                fun x ->
-                    match binder x with
-                    | Node p -> p
-            )
-        )
-
-    [<DebuggerHidden; DebuggerStepThrough>]
-    member _.Combine(Node (p1): NodeCode<unit>, Node (p2): NodeCode<'T>) : NodeCode<'T> = Node(async.Combine(p1, p2))
-
-    [<DebuggerHidden; DebuggerStepThrough>]
-    member _.Using(value: CompilationGlobalsScope, binder: CompilationGlobalsScope -> NodeCode<'U>) =
-        Node(
-            async {
-                DiagnosticsThreadStatics.DiagnosticsLogger <- value.DiagnosticsLogger
-                DiagnosticsThreadStatics.BuildPhase <- value.BuildPhase
-
-                try
-                    return! binder value |> Async.AwaitNodeCode
-                finally
-                    (value :> IDisposable).Dispose()
-            }
-        )
-    
-    [<DebuggerHidden; DebuggerStepThrough>]
-    member _.Using(value: IDisposable, binder: IDisposable -> NodeCode<'U>) =
-        Node(
-            async {
-                use _ = value
-                return! binder value |> Async.AwaitNodeCode
-            }
-        )
-        
-
-let node = NodeCodeBuilder()
-
-[<AbstractClass; Sealed>]
-type NodeCode private () =
-
-    static let cancellationToken = Node(wrapThreadStaticInfo Async.CancellationToken)
-
-    static member RunImmediate(computation: NodeCode<'T>, ct: CancellationToken) =
-        let diagnosticsLogger = DiagnosticsThreadStatics.DiagnosticsLogger
-        let phase = DiagnosticsThreadStatics.BuildPhase
-
-        try
-            try
-                let work =
-                    async {
-                        DiagnosticsThreadStatics.DiagnosticsLogger <- diagnosticsLogger
-                        DiagnosticsThreadStatics.BuildPhase <- phase
-                        return! computation |> Async.AwaitNodeCode
-                    }
-
-                Async.StartImmediateAsTask(work, cancellationToken = ct).Result
-            finally
-                DiagnosticsThreadStatics.DiagnosticsLogger <- diagnosticsLogger
-                DiagnosticsThreadStatics.BuildPhase <- phase
-        with :? AggregateException as ex when ex.InnerExceptions.Count = 1 ->
-            raise (ex.InnerExceptions[0])
-
-    static member RunImmediateWithoutCancellation(computation: NodeCode<'T>) =
-        NodeCode.RunImmediate(computation, CancellationToken.None)
-
-    static member StartAsTask_ForTesting(computation: NodeCode<'T>, ?ct: CancellationToken) =
-        let diagnosticsLogger = DiagnosticsThreadStatics.DiagnosticsLogger
-        let phase = DiagnosticsThreadStatics.BuildPhase
-
-        try
-            let work =
-                async {
-                    DiagnosticsThreadStatics.DiagnosticsLogger <- diagnosticsLogger
-                    DiagnosticsThreadStatics.BuildPhase <- phase
-                    return! computation |> Async.AwaitNodeCode
-                }
-
-            Async.StartAsTask(work, cancellationToken = defaultArg ct CancellationToken.None)
-        finally
-            DiagnosticsThreadStatics.DiagnosticsLogger <- diagnosticsLogger
-            DiagnosticsThreadStatics.BuildPhase <- phase
-
+    static let cancellationToken = wrapThreadStaticInfo (node { return! Async.CancellationToken })
     static member CancellationToken = cancellationToken
 
-    static member FromCancellable(computation: Cancellable<'T>) =
-        Node(wrapThreadStaticInfo (Cancellable.toAsync computation))
-
-    static member AwaitAsync(computation: Async<'T>) = Node(wrapThreadStaticInfo computation)
-
-    static member AwaitTask(task: Task<'T>) =
-        Node(wrapThreadStaticInfo (Async.AwaitTask task))
-
-    static member AwaitTask(task: Task) =
-        Node(wrapThreadStaticInfo (Async.AwaitTask task))
-
-    static member AwaitWaitHandle_ForTesting(waitHandle: WaitHandle) =
-        Node(wrapThreadStaticInfo (Async.AwaitWaitHandle(waitHandle)))
-
-    static member Sleep(ms: int) =
-        Node(wrapThreadStaticInfo (Async.Sleep(ms)))
+    static member GetAwaiter (nodeCode: NodeCode<_>) = (nodeCode ()).GetAwaiter
 
     static member Sequential(computations: NodeCode<'T> seq) =
         node {
@@ -192,12 +287,41 @@ type NodeCode private () =
 
             return results.ToArray()
         }
-    
+
+    // TODO: Review. Do we really want to just `WhenAll`?
     static member Parallel (computations: NodeCode<'T> seq) =
-        computations
-        |> Seq.map (fun (Node x) -> x)
-        |> Async.Parallel
-        |> Node
+        node {
+            let results = ResizeArray()
+
+            for computation in computations do
+                results.Add(computation())
+            
+            let! results = Task.WhenAll(results)
+            return results
+        }
+
+    static member RunImmediate(computation: NodeCode<'T>, ct: CancellationToken) =
+        let diagnosticsLogger = DiagnosticsThreadStatics.DiagnosticsLogger
+        let phase = DiagnosticsThreadStatics.BuildPhase
+        try
+            try
+                let work =
+                    node {
+                        DiagnosticsThreadStatics.DiagnosticsLogger <- diagnosticsLogger
+                        DiagnosticsThreadStatics.BuildPhase <- phase
+                        return! computation
+                    }
+                let task = work()
+                task.Wait(ct)
+                task.Result
+            finally
+                DiagnosticsThreadStatics.DiagnosticsLogger <- diagnosticsLogger
+                DiagnosticsThreadStatics.BuildPhase <- phase
+        with :? AggregateException as ex when ex.InnerExceptions.Count = 1 ->
+            raise (ex.InnerExceptions[0])
+
+    static member RunImmediateWithoutCancellation(computation: NodeCode<'T>) =
+        Node.RunImmediate(computation, CancellationToken.None)
 
 type private AgentMessage<'T> = GetValue of AsyncReplyChannel<Result<'T, Exception>> * callerCancellationToken: CancellationToken
 
@@ -281,7 +405,7 @@ type GraphNode<'T>(retryCompute: bool, computation: NodeCode<'T>) =
                                 // This computation can only be canceled if the requestCount reaches zero.
                                 let! result = computation |> Async.AwaitNodeCode
                                 cachedResult <- Task.FromResult(result)
-                                cachedResultNode <- node.Return result
+                                cachedResultNode <- node { return result }
                                 computation <- Unchecked.defaultof<_>
 
                                 if not callerCancellationToken.IsCancellationRequested then
@@ -308,7 +432,7 @@ type GraphNode<'T>(retryCompute: bool, computation: NodeCode<'T>) =
         else
             node {
                 if isCachedResultNodeNotNull () then
-                    return! cachedResult |> NodeCode.AwaitTask
+                    return! cachedResult
                 else
                     let action =
                         lock gate
@@ -341,7 +465,8 @@ type GraphNode<'T>(retryCompute: bool, computation: NodeCode<'T>) =
                     | GraphNodeAction.CachedValue result -> return result
                     | GraphNodeAction.GetValue ->
                         try
-                            let! ct = NodeCode.CancellationToken
+                            // TODO: Probably shouldn't reuse async's ct
+                            let! ct = Async.CancellationToken 
 
                             // We must set 'taken' before any implicit cancellation checks
                             // occur, making sure we are under the protection of the 'try'.
@@ -360,30 +485,16 @@ type GraphNode<'T>(retryCompute: bool, computation: NodeCode<'T>) =
                                              ||| TaskContinuationOptions.NotOnFaulted
                                              ||| TaskContinuationOptions.ExecuteSynchronously)
                                         )
-                                    |> NodeCode.AwaitTask
 
                                 if isCachedResultNotNull () then
                                     return cachedResult.Result
                                 else
-                                    let tcs = TaskCompletionSource<'T>()
-                                    let (Node (p)) = computation
 
-                                    Async.StartWithContinuations(
-                                        async {
-                                            Thread.CurrentThread.CurrentUICulture <- GraphNode.culture
-                                            return! p
-                                        },
-                                        (fun res ->
-                                            cachedResult <- Task.FromResult(res)
-                                            cachedResultNode <- node.Return res
-                                            computation <- Unchecked.defaultof<_>
-                                            tcs.SetResult(res)),
-                                        (fun ex -> tcs.SetException(ex)),
-                                        (fun _ -> tcs.SetCanceled()),
-                                        ct
-                                    )
-
-                                    return! tcs.Task |> NodeCode.AwaitTask
+                                    let! res = computation
+                                    cachedResult <- Task.FromResult(res)
+                                    cachedResultNode <- node { return res }
+                                    computation <- Unchecked.defaultof<_>
+                                    return res
                             finally
                                 if taken then semaphore.Release() |> ignore
                         finally
@@ -394,11 +505,9 @@ type GraphNode<'T>(retryCompute: bool, computation: NodeCode<'T>) =
                         let mbp, cts = agent
 
                         try
-                            let! ct = NodeCode.CancellationToken
-
-                            let! res =
-                                mbp.PostAndAsyncReply(fun replyChannel -> GetValue(replyChannel, ct))
-                                |> NodeCode.AwaitAsync
+                            let! ct = Async.CancellationToken
+                            let! res = mbp.PostAndAsyncReply(fun replyChannel -> GetValue(replyChannel, ct))
+                                
 
                             match res with
                             | Ok result -> return result

@@ -272,8 +272,8 @@ type Async<'T> with
 [<RequireQualifiedAccess>]
 type Node private () =
 
-    //static let cancellationToken = wrapThreadStaticInfo (node { return! Async.CancellationToken })
-    //static member CancellationToken = cancellationToken
+    static let cancellationToken = wrapThreadStaticInfo (node { return! Async.CancellationToken })
+    static member CancellationToken = cancellationToken
 
     static member GetAwaiter (nodeCode: NodeCode<_>) = (nodeCode ()).GetAwaiter
 

@@ -1237,7 +1237,7 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
     let checkFileTimeStamps (cache: TimeStampCache) =
         node {
             // TODO(vlza): Sort out CancellationToken
-            let! ct = Async.CancellationToken
+            let! ct = Node.CancellationToken
             setCurrentState currentState cache ct
         }
 

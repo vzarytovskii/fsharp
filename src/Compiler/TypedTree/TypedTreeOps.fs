@@ -3,6 +3,7 @@
 /// Defines derived expression manipulation and construction functions.
 module internal FSharp.Compiler.TypedTreeOps
 
+open System.CodeDom.Compiler
 open System.Collections.Generic
 open System.Collections.Immutable
 open Internal.Utilities
@@ -11,6 +12,7 @@ open Internal.Utilities.Library
 open Internal.Utilities.Library.Extras
 open Internal.Utilities.Rational
 
+open FSharp.Compiler.IO
 open FSharp.Compiler.AbstractIL.IL
 open FSharp.Compiler.CompilerGlobalState
 open FSharp.Compiler.DiagnosticsLogger
@@ -5983,14 +5985,14 @@ and remapUnionCases ctxt tmenv (x: TyconUnionData) =
     x.UnionCasesAsList |> List.map (remapUnionCase ctxt tmenv) |> Construct.MakeUnionCases 
 
 and remapFsObjData ctxt tmenv x = 
-    { x with 
-          fsobjmodel_kind = 
-             (match x.fsobjmodel_kind with 
-              | TFSharpDelegate slotsig -> TFSharpDelegate (remapSlotSig (remapAttribs ctxt tmenv) tmenv slotsig)
-              | TFSharpClass | TFSharpInterface | TFSharpStruct | TFSharpEnum -> x.fsobjmodel_kind)
-          fsobjmodel_vslots = x.fsobjmodel_vslots |> List.map (remapValRef tmenv)
-          fsobjmodel_rfields = x.fsobjmodel_rfields |> remapRecdFields ctxt tmenv } 
-
+    { 
+        fsobjmodel_kind = 
+            match x.fsobjmodel_kind with 
+            | TFSharpDelegate slotsig -> TFSharpDelegate (remapSlotSig (remapAttribs ctxt tmenv) tmenv slotsig)
+            | TFSharpClass | TFSharpInterface | TFSharpStruct | TFSharpEnum -> x.fsobjmodel_kind
+        fsobjmodel_vslots = x.fsobjmodel_vslots |> List.map (remapValRef tmenv)
+        fsobjmodel_rfields = x.fsobjmodel_rfields |> remapRecdFields ctxt tmenv
+    } 
 
 and remapTyconRepr ctxt tmenv repr = 
     match repr with 
@@ -7749,6 +7751,9 @@ let mkCallSeqGenerated g m elemTy arg1 arg2 =
                        
 let mkCallSeqFinally g m elemTy arg1 arg2 = 
     mkApps g (typedExprForIntrinsic g m g.seq_finally_info, [[elemTy]], [ arg1; arg2 ], m) 
+
+let mkCallSeqTryWith g m elemTy origSeq exnFilter exnHandler = 
+    mkApps g (typedExprForIntrinsic g m g.seq_trywith_info, [[elemTy]], [ origSeq; exnFilter; exnHandler ], m) 
                        
 let mkCallSeqOfFunctions g m ty1 ty2 arg1 arg2 arg3 = 
     mkApps g (typedExprForIntrinsic g m g.seq_of_functions_info, [[ty1;ty2]], [ arg1; arg2; arg3 ], m) 
@@ -10478,3 +10483,106 @@ let tryAddExtensionAttributeIfNotAlreadyPresent
         match tryFindExtensionAttributeIn tryFindExtensionAttribute with
         | None -> entity
         | Some extensionAttrib -> { entity with entity_attribs = extensionAttrib :: entity.Attribs }
+
+type TypedTreeNode =
+    {
+        Kind: string
+        Name: string
+        Children: TypedTreeNode list
+    }
+
+let rec visitEntity (entity: Entity) : TypedTreeNode =
+    let kind =
+        if entity.IsModule then
+            "module"
+        elif entity.IsNamespace then
+            "namespace"
+        else
+            "other"
+
+    let children =
+        if not entity.IsModuleOrNamespace then
+            Seq.empty
+        else
+            seq {
+                yield! Seq.map visitEntity entity.ModuleOrNamespaceType.AllEntities
+                yield! Seq.map visitVal entity.ModuleOrNamespaceType.AllValsAndMembers
+            }
+
+    {
+        Kind = kind
+        Name = entity.CompiledName
+        Children = Seq.toList children
+    }
+
+and visitVal (v: Val) : TypedTreeNode =
+    let children =
+        seq {
+            match v.ValReprInfo with
+            | None -> ()
+            | Some reprInfo ->
+                yield!
+                    reprInfo.ArgInfos
+                    |> Seq.collect (fun argInfos ->
+                        argInfos
+                        |> Seq.map (fun argInfo -> {
+                            Name = argInfo.Name |> Option.map (fun i -> i.idText) |> Option.defaultValue ""
+                            Kind = "ArgInfo"
+                            Children = []
+                        })
+                    )
+
+            yield!
+                v.Typars
+                |> Seq.map (fun typar -> {
+                    Name = typar.Name
+                    Kind = "Typar"
+                    Children = []
+                })
+        }
+
+    {
+        Name = v.CompiledName None
+        Kind = "val"
+        Children = Seq.toList children
+    }
+
+let rec serializeNode (writer: IndentedTextWriter) (addTrailingComma:bool) (node: TypedTreeNode) =
+    writer.WriteLine("{")
+    // Add indent after opening {
+    writer.Indent <- writer.Indent + 1
+    
+    writer.WriteLine($"\"name\": \"{node.Name}\",")
+    writer.WriteLine($"\"kind\": \"{node.Kind}\",")
+
+    if node.Children.IsEmpty then
+        writer.WriteLine("\"children\": []")
+    else
+        writer.WriteLine("\"children\": [")
+        
+        // Add indent after opening [
+        writer.Indent <- writer.Indent + 1
+        
+        node.Children
+        |> List.iteri (fun idx -> serializeNode writer (idx + 1 < node.Children.Length))
+
+        // Remove indent before closing ]
+        writer.Indent <- writer.Indent - 1
+        writer.WriteLine("]")
+    
+    // Remove indent before closing }
+    writer.Indent <- writer.Indent - 1
+    if addTrailingComma then
+        writer.WriteLine("},")
+    else
+        writer.WriteLine("}")
+ 
+let rec serializeEntity path (entity: Entity) =
+    let root = visitEntity entity
+    use sw = new System.IO.StringWriter()
+    use writer = new IndentedTextWriter(sw)
+    serializeNode writer false root
+    writer.Flush()
+    let json = sw.ToString()
+    use out = FileSystem.OpenFileForWriteShim(path, fileMode = System.IO.FileMode.Create)
+    out.WriteAllText(json)

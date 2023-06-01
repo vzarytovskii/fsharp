@@ -28,6 +28,7 @@ open FSharp.Compiler.Symbols
 open FSharp.Compiler.Tokenization
 open System.Composition
 open System.Text.RegularExpressions
+open CancellableTasks
 
 module private Symbol =
     let fullName (root: ISymbol) : string =
@@ -107,45 +108,6 @@ module private ExternalSymbol =
             ]
 
         | _ -> []
-
-// TODO: Uncomment code when VS has a fix for updating the status bar.
-type StatusBar() =
-    let statusBar =
-        ServiceProvider.GlobalProvider.GetService<SVsStatusbar, IVsStatusbar>()
-
-    let mutable _searchIcon =
-        int16 Microsoft.VisualStudio.Shell.Interop.Constants.SBAI_Find :> obj
-
-    let _clear () =
-        // unfreeze the statusbar
-        statusBar.FreezeOutput 0 |> ignore
-        statusBar.Clear() |> ignore
-
-    member _.Message(_msg: string) = ()
-    //let _, frozen = statusBar.IsFrozen()
-    //// unfreeze the status bar
-    //if frozen <> 0 then statusBar.FreezeOutput 0 |> ignore
-    //statusBar.SetText msg |> ignore
-    //// freeze the status bar
-    //statusBar.FreezeOutput 1 |> ignore
-
-    member this.TempMessage(_msg: string) = ()
-    //this.Message msg
-    //async {
-    //    do! Async.Sleep 4000
-    //    match statusBar.GetText() with
-    //    | 0, currentText when currentText <> msg -> ()
-    //    | _ -> clear()
-    //}|> Async.Start
-
-    member _.Clear() = () //clear()
-
-    /// Animated magnifying glass that displays on the status bar while a symbol search is in progress.
-    member _.Animate() : IDisposable =
-        //statusBar.Animation (1, &searchIcon) |> ignore
-        { new IDisposable with
-            member _.Dispose() = ()
-        } //statusBar.Animation(0, &searchIcon) |> ignore }
 
 type internal FSharpGoToDefinitionNavigableItem(document, sourceSpan) =
     inherit FSharpNavigableItem(Glyph.BasicFile, ImmutableArray.Empty, document, sourceSpan)
@@ -389,7 +351,6 @@ type internal GoToDefinition(metadataAsSource: FSharpMetadataAsSourceService) =
     /// at the provided position in the document.
     member this.FindDefinitionTask(originDocument: Document, position: int, cancellationToken: CancellationToken) =
         this.FindDefinitionAtPosition(originDocument, position, cancellationToken)
-        |> RoslynHelpers.StartAsyncAsTask cancellationToken
 
     /// Navigate to the positon of the textSpan in the provided document
     /// used by quickinfo link navigation when the tooltip contains the correct destination range.
@@ -404,32 +365,16 @@ type internal GoToDefinition(metadataAsSource: FSharpMetadataAsSourceService) =
 
         let navigationService =
             workspace.Services.GetService<IFSharpDocumentNavigationService>()
-
-        let navigationSucceeded =
-            navigationService.TryNavigateToSpan(workspace, navigableItem.Document.Id, navigableItem.SourceSpan, cancellationToken)
-
-        if not navigationSucceeded then
-            StatusBar().TempMessage(SR.CannotNavigateUnknown())
+    
+        navigationService.TryNavigateToSpan(workspace, navigableItem.Document.Id, navigableItem.SourceSpan, cancellationToken) |> ignore
 
     member _.NavigateToItem(navigableItem: FSharpNavigableItem, cancellationToken: CancellationToken) =
-        let statusBar = StatusBar()
-        use __ = statusBar.Animate()
-
-        statusBar.Message(SR.NavigatingTo())
-
         let workspace = navigableItem.Document.Project.Solution.Workspace
 
         let navigationService =
             workspace.Services.GetService<IFSharpDocumentNavigationService>()
 
-        // Prefer open documents in the preview tab.
-        let result =
-            navigationService.TryNavigateToSpan(workspace, navigableItem.Document.Id, navigableItem.SourceSpan, cancellationToken)
-
-        if result then
-            statusBar.Clear()
-        else
-            statusBar.TempMessage(SR.CannotNavigateUnknown())
+        navigationService.TryNavigateToSpan(workspace, navigableItem.Document.Id, navigableItem.SourceSpan, cancellationToken) |> ignore
 
     /// Find the declaration location (signature file/.fsi) of the target symbol if possible, fall back to definition
     member this.NavigateToSymbolDeclarationAsync
@@ -461,11 +406,8 @@ type internal GoToDefinition(metadataAsSource: FSharpMetadataAsSourceService) =
         (
             targetSymbolUse: FSharpSymbolUse,
             metadataReferences: seq<MetadataReference>,
-            cancellationToken: CancellationToken,
-            statusBar: StatusBar
+            cancellationToken: CancellationToken
         ) =
-        use __ = statusBar.Animate()
-        statusBar.Message(SR.NavigatingTo())
 
         let textOpt =
             match targetSymbolUse.Symbol with
@@ -487,103 +429,99 @@ type internal GoToDefinition(metadataAsSource: FSharpMetadataAsSourceService) =
                 |> Option.map (fun text -> text, symbol.DisplayName)
             | _ -> None
 
-        let result =
-            match textOpt with
-            | Some (text, fileName) ->
-                let tmpProjInfo, tmpDocInfo =
-                    MetadataAsSource.generateTemporaryDocument (
-                        AssemblyIdentity(targetSymbolUse.Symbol.Assembly.QualifiedName),
-                        fileName,
-                        metadataReferences
-                    )
+        
+        match textOpt with
+        | Some (text, fileName) ->
+            let tmpProjInfo, tmpDocInfo =
+                MetadataAsSource.generateTemporaryDocument (
+                    AssemblyIdentity(targetSymbolUse.Symbol.Assembly.QualifiedName),
+                    fileName,
+                    metadataReferences
+                )
 
-                let tmpShownDocOpt =
-                    metadataAsSource.ShowDocument(tmpProjInfo, tmpDocInfo.FilePath, SourceText.From(text.ToString()))
+            let tmpShownDocOpt =
+                metadataAsSource.ShowDocument(tmpProjInfo, tmpDocInfo.FilePath, SourceText.From(text.ToString()))
 
-                match tmpShownDocOpt with
-                | Some tmpShownDoc ->
-                    let goToAsync =
-                        asyncMaybe {
-                            let! _, checkResults =
-                                tmpShownDoc.GetFSharpParseAndCheckResultsAsync("NavigateToExternalDeclaration")
-                                |> liftAsync
+            match tmpShownDocOpt with
+            | Some tmpShownDoc ->
+                let goToAsync =
+                    asyncMaybe {
+                        let! _, checkResults =
+                            tmpShownDoc.GetFSharpParseAndCheckResultsAsync("NavigateToExternalDeclaration")
+                            |> liftAsync
 
-                            let! r =
-                                let rec areTypesEqual (ty1: FSharpType) (ty2: FSharpType) =
-                                    let ty1 = ty1.StripAbbreviations()
-                                    let ty2 = ty2.StripAbbreviations()
+                        let! r =
+                            let rec areTypesEqual (ty1: FSharpType) (ty2: FSharpType) =
+                                let ty1 = ty1.StripAbbreviations()
+                                let ty2 = ty2.StripAbbreviations()
 
-                                    let generic =
-                                        ty1.IsGenericParameter && ty2.IsGenericParameter
-                                        || (ty1.GenericArguments.Count = ty2.GenericArguments.Count
-                                            && (ty1.GenericArguments, ty2.GenericArguments) ||> Seq.forall2 areTypesEqual)
+                                let generic =
+                                    ty1.IsGenericParameter && ty2.IsGenericParameter
+                                    || (ty1.GenericArguments.Count = ty2.GenericArguments.Count
+                                        && (ty1.GenericArguments, ty2.GenericArguments) ||> Seq.forall2 areTypesEqual)
 
-                                    if generic then
-                                        true
-                                    else
-                                        let namesEqual = ty1.TypeDefinition.DisplayName = ty2.TypeDefinition.DisplayName
-                                        let accessPathsEqual = ty1.TypeDefinition.AccessPath = ty2.TypeDefinition.AccessPath
-                                        namesEqual && accessPathsEqual
+                                if generic then
+                                    true
+                                else
+                                    let namesEqual = ty1.TypeDefinition.DisplayName = ty2.TypeDefinition.DisplayName
+                                    let accessPathsEqual = ty1.TypeDefinition.AccessPath = ty2.TypeDefinition.AccessPath
+                                    namesEqual && accessPathsEqual
 
-                                // This tries to find the best possible location of the target symbol's location in the metadata source.
-                                // We really should rely on symbol equality within FCS instead of doing it here,
-                                //     but the generated metadata as source isn't perfect for symbol equality.
-                                checkResults.GetAllUsesOfAllSymbolsInFile(cancellationToken)
-                                |> Seq.tryFind (fun x ->
-                                    match x.Symbol, targetSymbolUse.Symbol with
-                                    | (:? FSharpEntity as symbol1), (:? FSharpEntity as symbol2) when x.IsFromDefinition ->
-                                        symbol1.DisplayName = symbol2.DisplayName
-                                    | (:? FSharpMemberOrFunctionOrValue as symbol1), (:? FSharpMemberOrFunctionOrValue as symbol2) ->
-                                        symbol1.DisplayName = symbol2.DisplayName
-                                        && (match symbol1.DeclaringEntity, symbol2.DeclaringEntity with
-                                            | Some e1, Some e2 -> e1.CompiledName = e2.CompiledName
-                                            | _ -> false)
-                                        && symbol1.GenericParameters.Count = symbol2.GenericParameters.Count
-                                        && symbol1.CurriedParameterGroups.Count = symbol2.CurriedParameterGroups.Count
-                                        && ((symbol1.CurriedParameterGroups, symbol2.CurriedParameterGroups)
-                                            ||> Seq.forall2 (fun pg1 pg2 ->
-                                                pg1.Count = pg2.Count
-                                                && ((pg1, pg2) ||> Seq.forall2 (fun p1 p2 -> areTypesEqual p1.Type p2.Type))))
-                                        && areTypesEqual symbol1.ReturnParameter.Type symbol2.ReturnParameter.Type
-                                    | (:? FSharpField as symbol1), (:? FSharpField as symbol2) when x.IsFromDefinition ->
-                                        symbol1.DisplayName = symbol2.DisplayName
-                                        && (match symbol1.DeclaringEntity, symbol2.DeclaringEntity with
-                                            | Some e1, Some e2 -> e1.CompiledName = e2.CompiledName
-                                            | _ -> false)
-                                    | (:? FSharpUnionCase as symbol1), (:? FSharpUnionCase as symbol2) ->
-                                        symbol1.DisplayName = symbol2.DisplayName
-                                        && symbol1.DeclaringEntity.CompiledName = symbol2.DeclaringEntity.CompiledName
-                                    | _ -> false)
-                                |> Option.map (fun x -> x.Range)
+                            // This tries to find the best possible location of the target symbol's location in the metadata source.
+                            // We really should rely on symbol equality within FCS instead of doing it here,
+                            //     but the generated metadata as source isn't perfect for symbol equality.
+                            checkResults.GetAllUsesOfAllSymbolsInFile(cancellationToken)
+                            |> Seq.tryFind (fun x ->
+                                match x.Symbol, targetSymbolUse.Symbol with
+                                | (:? FSharpEntity as symbol1), (:? FSharpEntity as symbol2) when x.IsFromDefinition ->
+                                    symbol1.DisplayName = symbol2.DisplayName
+                                | (:? FSharpMemberOrFunctionOrValue as symbol1), (:? FSharpMemberOrFunctionOrValue as symbol2) ->
+                                    symbol1.DisplayName = symbol2.DisplayName
+                                    && (match symbol1.DeclaringEntity, symbol2.DeclaringEntity with
+                                        | Some e1, Some e2 -> e1.CompiledName = e2.CompiledName
+                                        | _ -> false)
+                                    && symbol1.GenericParameters.Count = symbol2.GenericParameters.Count
+                                    && symbol1.CurriedParameterGroups.Count = symbol2.CurriedParameterGroups.Count
+                                    && ((symbol1.CurriedParameterGroups, symbol2.CurriedParameterGroups)
+                                        ||> Seq.forall2 (fun pg1 pg2 ->
+                                            pg1.Count = pg2.Count
+                                            && ((pg1, pg2) ||> Seq.forall2 (fun p1 p2 -> areTypesEqual p1.Type p2.Type))))
+                                    && areTypesEqual symbol1.ReturnParameter.Type symbol2.ReturnParameter.Type
+                                | (:? FSharpField as symbol1), (:? FSharpField as symbol2) when x.IsFromDefinition ->
+                                    symbol1.DisplayName = symbol2.DisplayName
+                                    && (match symbol1.DeclaringEntity, symbol2.DeclaringEntity with
+                                        | Some e1, Some e2 -> e1.CompiledName = e2.CompiledName
+                                        | _ -> false)
+                                | (:? FSharpUnionCase as symbol1), (:? FSharpUnionCase as symbol2) ->
+                                    symbol1.DisplayName = symbol2.DisplayName
+                                    && symbol1.DeclaringEntity.CompiledName = symbol2.DeclaringEntity.CompiledName
+                                | _ -> false)
+                            |> Option.map (fun x -> x.Range)
 
-                            let span =
-                                match RoslynHelpers.TryFSharpRangeToTextSpan(tmpShownDoc.GetTextAsync(cancellationToken).Result, r) with
-                                | Some span -> span
-                                | _ -> TextSpan()
+                        let span =
+                            match RoslynHelpers.TryFSharpRangeToTextSpan(tmpShownDoc.GetTextAsync(cancellationToken).Result, r) with
+                            | Some span -> span
+                            | _ -> TextSpan()
 
-                            return span
-                        }
+                        return span
+                    }
 
-                    let span =
-                        match Async.RunImmediateExceptOnUI(goToAsync, cancellationToken = cancellationToken) with
-                        | Some span -> span
-                        | _ -> TextSpan()
+                let span =
+                    match Async.RunImmediateExceptOnUI(goToAsync, cancellationToken = cancellationToken) with
+                    | Some span -> span
+                    | _ -> TextSpan()
 
-                    let navItem = FSharpGoToDefinitionNavigableItem(tmpShownDoc, span)
-                    this.NavigateToItem(navItem, cancellationToken)
-                    true
-                | _ -> false
+                let navItem = FSharpGoToDefinitionNavigableItem(tmpShownDoc, span)
+                this.NavigateToItem(navItem, cancellationToken)
+                true
             | _ -> false
-
-        if result then
-            statusBar.Clear()
-        else
-            statusBar.TempMessage(SR.CannotNavigateUnknown())
+        | _ -> false
 
 type internal FSharpNavigation(metadataAsSource: FSharpMetadataAsSourceService, initialDoc: Document, thisSymbolUseRange: range) =
 
     let workspace = initialDoc.Project.Solution.Workspace
     let solution = workspace.CurrentSolution
+    let gtd = GoToDefinition(metadataAsSource)
 
     member _.IsTargetValid(range: range) =
         range <> rangeStartup
@@ -644,36 +582,21 @@ type internal FSharpNavigation(metadataAsSource: FSharpMetadataAsSourceService, 
             | FSharpGoToDefinitionResult.NavigableItem (navItem) -> Some navItem
             | _ -> None)
 
-    member _.TryGoToDefinition(position, cancellationToken) =
-        let gtd = GoToDefinition(metadataAsSource)
-        let statusBar = StatusBar()
-        let gtdTask = gtd.FindDefinitionTask(initialDoc, position, cancellationToken)
-
-        // Wrap this in a try/with as if the user clicks "Cancel" on the thread dialog, we'll be cancelled.
-        // Task.Wait throws an exception if the task is cancelled, so be sure to catch it.
-        try
-            // This call to Wait() is fine because we want to be able to provide the error message in the status bar.
-            gtdTask.Wait(cancellationToken)
-
-            if gtdTask.Status = TaskStatus.RanToCompletion && gtdTask.Result.IsSome then
-                match gtdTask.Result.Value with
-                | FSharpGoToDefinitionResult.NavigableItem (navItem), _ ->
+    member _.TryGoToDefinition(position) =
+        cancellableTask {
+            let! cancellationToken = CancellableTask.getCurrentCancellationToken ()
+            let! gtdResult = gtd.FindDefinitionTask(initialDoc, position, cancellationToken)
+            match gtdResult with
+            | None -> return false
+            | Some (result, _) ->
+                match result with
+                | FSharpGoToDefinitionResult.NavigableItem (navItem) ->
                     gtd.NavigateToItem(navItem, cancellationToken)
-                    // 'true' means do it, like Sheev Palpatine would want us to.
-                    true
-                | FSharpGoToDefinitionResult.ExternalAssembly (targetSymbolUse, metadataReferences), _ ->
-                    gtd.NavigateToExternalDeclaration(targetSymbolUse, metadataReferences, cancellationToken, statusBar)
-                    // 'true' means do it, like Sheev Palpatine would want us to.
-                    true
-            else
-                statusBar.TempMessage(SR.CannotDetermineSymbol())
-                false
-        with exc ->
-            statusBar.TempMessage(String.Format(SR.NavigateToFailed(), Exception.flattenMessage exc))
-
-            // Don't show the dialog box as it's most likely that the user cancelled.
-            // Don't make them click twice.
-            true
+                    return true
+                | FSharpGoToDefinitionResult.ExternalAssembly (targetSymbolUse, metadataReferences) ->
+                    gtd.NavigateToExternalDeclaration(targetSymbolUse, metadataReferences, cancellationToken) |> ignore
+                    return true
+        }
 
 [<RequireQualifiedAccess>]
 type internal SymbolMemberType =

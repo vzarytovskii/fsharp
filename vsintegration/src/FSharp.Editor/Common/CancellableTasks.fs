@@ -291,11 +291,11 @@ module CancellableTasks =
 
     /// Contains methods to build CancellableTasks using the F# computation expression syntax
     [<Sealed; NoComparison; NoEquality>]
-    type CancellableTaskBuilder(runOnBackground: bool) =
+    type CancellableTaskBuilder(isBackgroundTaskBuilder: bool) =
 
         inherit CancellableTaskBuilderBase()
 
-        member val IsBackground = runOnBackground
+        member val IsBackgroundTaskBuilder = isBackgroundTaskBuilder
 
         // This is the dynamic implementation - this is not used
         // for statically compiled tasks.  An executor (resumptionFuncExecutor) is
@@ -356,13 +356,16 @@ module CancellableTasks =
         /// <summary>
         /// The entry point for the dynamic implementation of the corresponding operation. Do not use directly, only used when executing quotations that involve tasks or other reflective execution of F# code.
         /// </summary>
-        static member inline RunDynamic(code: CancellableTaskCode<'T, 'T>, runOnBackground: bool) : CancellableTask<'T> =
-            // When runOnBackground is true, task escapes to a background thread where necessary
+        static member inline RunDynamic(code: CancellableTaskCode<'T, 'T>, isBackgroundTaskBuilder: bool) : CancellableTask<'T> =
+            // When isBackgroundTaskBuilder is true, task escapes to a background thread where necessary
             // See spec of ConfigureAwait(false) at https://devblogs.microsoft.com/dotnet/configureawait-faq/
 
-            if runOnBackground
-                && not (isNull SynchronizationContext.Current
-                        && obj.ReferenceEquals(TaskScheduler.Current, TaskScheduler.Default))
+            let isThreadPoolThread = Thread.CurrentThread.IsThreadPoolThread
+            let isUiThread = not(isNull SynchronizationContext.Current)
+            if isBackgroundTaskBuilder
+                && (isUiThread
+                    || not (obj.ReferenceEquals(TaskScheduler.Current, TaskScheduler.Default)
+                            && isThreadPoolThread))
             then
                 fun (ct) ->
                     // Warning: this will always try to yield even if on thread pool already.
@@ -397,9 +400,15 @@ module CancellableTasks =
                         sm.Data.MethodBuilder.SetStateMachine(state)
                     ))
                     (AfterCode<_, _>(fun sm ->
-                        if this.IsBackground
-                            && not (isNull SynchronizationContext.Current
-                                    && obj.ReferenceEquals(TaskScheduler.Current, TaskScheduler.Default))
+                        // TaskScheduler.Default is esentially an equivalent of being on the threadpool thread.
+                        // TaskScheduler.Current is never null.
+                        // Even if no scheduler is active and the current thread is not a threadpool thread, TaskScheduler.Current = TaskScheduler.Default.
+                        let isThreadPoolThread = Thread.CurrentThread.IsThreadPoolThread
+                        let isUiThread = not(isNull SynchronizationContext.Current)
+                        if this.IsBackgroundTaskBuilder
+                            && (isUiThread
+                                || not (obj.ReferenceEquals(TaskScheduler.Current, TaskScheduler.Default)
+                                        && isThreadPoolThread))
                         then
 
                             let sm = sm // copy contents of state machine so we can capture it
@@ -435,7 +444,7 @@ module CancellableTasks =
                                     sm.Data.MethodBuilder.Task
                     ))
             else
-                CancellableTaskBuilder.RunDynamic(code, this.IsBackground)
+                CancellableTaskBuilder.RunDynamic(code, this.IsBackgroundTaskBuilder)
 
     /// Contains the cancellableTask computation expression builder.
     [<AutoOpen>]

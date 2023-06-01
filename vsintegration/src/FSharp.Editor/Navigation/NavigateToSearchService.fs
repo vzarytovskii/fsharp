@@ -151,29 +151,33 @@ type internal FSharpNavigateToSearchService [<ImportingConstructor>]
             let! sourceText = document.GetTextAsync ct
 
             let processItem (item: NavigableItem) =
-                asyncMaybe { // TODO: make a flat cancellable task
-
-                    do! Option.guard (kinds.Contains(navigateToItemKindToRoslynKind item.Kind))
-
-                    let! m = tryMatch item
-
-                    let! sourceSpan = RoslynHelpers.TryFSharpRangeToTextSpan(sourceText, item.Range)
-                    let glyph = navigateToItemKindToGlyph item.Kind
-                    let kind = navigateToItemKindToRoslynKind item.Kind
-                    let additionalInfo = formatInfo item.Container document
-
+                backgroundTask {
                     return
-                        FSharpNavigateToSearchResult(
-                            additionalInfo,
-                            kind,
-                            patternMatchKindToNavigateToMatchKind m.Kind,
-                            item.Name,
-                            FSharpNavigableItem(glyph, ImmutableArray.Create(TaggedText(TextTags.Text, item.Name)), document, sourceSpan)
-                        )
+                        maybe {
+
+                            do! Option.guard (kinds.Contains(navigateToItemKindToRoslynKind item.Kind))
+
+                            let! m = tryMatch item
+
+                            let! sourceSpan = RoslynHelpers.TryFSharpRangeToTextSpan(sourceText, item.Range)
+                            let glyph = navigateToItemKindToGlyph item.Kind
+                            let kind = navigateToItemKindToRoslynKind item.Kind
+                            let additionalInfo = formatInfo item.Container document
+
+                            return
+                                FSharpNavigateToSearchResult(
+                                    additionalInfo,
+                                    kind,
+                                    patternMatchKindToNavigateToMatchKind m.Kind,
+                                    item.Name,
+                                    FSharpNavigableItem(glyph, ImmutableArray.Create(TaggedText(TextTags.Text, item.Name)), document, sourceSpan)
+                                )
+                        }
                 }
 
             let! items = getNavigableItems document
-            let! processed = items |> Seq.map processItem |> Async.Parallel
+
+            let! processed = items |> Seq.map processItem |> Task.WhenAll
             return processed |> Array.choose id
         }
 

@@ -2,6 +2,7 @@
 
 namespace Microsoft.VisualStudio.FSharp.Editor
 
+open System
 open System.Composition
 open System.Threading
 open System.Threading.Tasks
@@ -10,6 +11,8 @@ open FSharp.Compiler.Text.Range
 
 open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.ExternalAccess.FSharp.Editor
+open CancellableTasks
+open Microsoft.VisualStudio.Shell
 
 [<Export(typeof<IFSharpGoToDefinitionService>)>]
 [<Export(typeof<FSharpGoToDefinitionService>)>]
@@ -25,10 +28,16 @@ type internal FSharpGoToDefinitionService [<ImportingConstructor>] (metadataAsSo
         /// Invoked with Go to Definition.
         /// Try to navigate to the definiton of the symbol at the symbolRange in the originDocument
         member _.TryGoToDefinition(document: Document, position: int, cancellationToken: CancellationToken) =
-            let statusBar = StatusBar()
-            statusBar.Message(SR.LocatingSymbol())
-            use __ = statusBar.Animate()
+            let gtdTask =
+                cancellableTask {
+                    let navigation = FSharpNavigation(metadataAsSource, document, rangeStartup)
 
-            let navigation = FSharpNavigation(metadataAsSource, document, rangeStartup)
+                    return! navigation.TryGoToDefinition(position)
+                }
 
-            navigation.TryGoToDefinition(position, cancellationToken)
+            ThreadHelper.JoinableTaskFactory.Run(
+               SR.NavigatingTo(),
+               (fun _progress ct ->
+                    let cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, ct)
+                    gtdTask cts.Token),
+               TimeSpan.FromSeconds 1)

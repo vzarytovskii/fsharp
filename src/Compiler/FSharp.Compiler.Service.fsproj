@@ -518,6 +518,8 @@
   </ItemGroup>
 
   <PropertyGroup Condition="'$(BUILDING_USING_DOTNET)' == 'true'">
+    <!-- We always want to update localization if we build using plain `dotnet build` and if this project is specified directly (as written in DEVGUIDE) -->
+    <EnableXlfLocalization>true</EnableXlfLocalization>
     <OutputPath>$(ArtifactsDir)/bin/$(MSBuildProjectName)/$(Configuration)/</OutputPath>
     <IntermediateOutputPath>$(ArtifactsDir)obj/$(MSBuildProjectName)/$(Configuration)/</IntermediateOutputPath>
   </PropertyGroup>

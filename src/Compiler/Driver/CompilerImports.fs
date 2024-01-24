@@ -41,6 +41,8 @@ open FSharp.Compiler.TypedTree
 open FSharp.Compiler.TypedTreeBasics
 open FSharp.Compiler.TypedTreeOps
 open FSharp.Compiler.BuildGraph
+open FSharp.Compiler.Facilities.CancellableTasks
+
 
 #if !NO_TYPEPROVIDERS
 open FSharp.Compiler.TypeProviders
@@ -2158,14 +2160,14 @@ and [<Sealed>] TcImports
         (
             ctok,
             r: AssemblyResolution
-        ) : NodeCode<(_ * (unit -> AvailableImportedAssembly list)) option> =
-        node {
+        ) : CancellableTask<(_ * (unit -> AvailableImportedAssembly list)) option> =
+        cancellableTask {
             CheckDisposed()
             let m = r.originalReference.Range
             let fileName = r.resolvedPath
 
             let! contentsOpt =
-                node {
+                cancellableTask {
                     match r.ProjectReference with
                     | Some ilb -> return! ilb.EvaluateRawContents()
                     | None -> return ProjectAssemblyDataResult.Unavailable true
@@ -2228,20 +2230,20 @@ and [<Sealed>] TcImports
 
     // NOTE: When used in the Language Service this can cause the transitive checking of projects. Hence it must be cancellable.
     member tcImports.RegisterAndImportReferencedAssemblies(ctok, nms: AssemblyResolution list) =
-        node {
+        cancellableTask {
             CheckDisposed()
 
             let tcConfig = tcConfigP.Get ctok
 
             let runMethod =
                 match tcConfig.parallelReferenceResolution with
-                | ParallelReferenceResolution.On -> NodeCode.Parallel
-                | ParallelReferenceResolution.Off -> NodeCode.Sequential
+                | ParallelReferenceResolution.On -> CancellableTask.whenAll
+                | ParallelReferenceResolution.Off -> CancellableTask.sequential
 
             let! results =
                 nms
                 |> List.map (fun nm ->
-                    node {
+                    cancellableTask {
                         try
                             return! tcImports.TryRegisterAndPrepareToImportReferencedDll(ctok, nm)
                         with e ->
@@ -2282,7 +2284,7 @@ and [<Sealed>] TcImports
                     ReportWarnings warns
 
                     tcImports.RegisterAndImportReferencedAssemblies(ctok, res)
-                    |> NodeCode.RunImmediateWithoutCancellation
+                    |> CancellableTask.runSynchronouslyWithoutCancellation
                     |> ignore
 
                     true
@@ -2383,7 +2385,7 @@ and [<Sealed>] TcImports
     // we dispose TcImports is because we need to dispose type providers, and type providers are never included in the framework DLL set.
     // If a framework set ever includes type providers, you will not have to worry about explicitly calling Dispose as the Finalizer will handle it.
     static member BuildFrameworkTcImports(tcConfigP: TcConfigProvider, frameworkDLLs, nonFrameworkDLLs) =
-        node {
+        cancellableTask {
             let ctok = CompilationThreadToken()
             let tcConfig = tcConfigP.Get ctok
 
@@ -2460,7 +2462,7 @@ and [<Sealed>] TcImports
                 resolvedAssemblies |> List.choose tryFindEquivPrimaryAssembly
 
             let! fslibCcu, fsharpCoreAssemblyScopeRef =
-                node {
+                cancellableTask {
                     if tcConfig.compilingFSharpCore then
                         // When compiling FSharp.Core.dll, the fslibCcu reference to FSharp.Core.dll is a delayed ccu thunk fixed up during type checking
                         return CcuThunk.CreateDelayed getFSharpCoreLibraryName, ILScopeRef.Local
@@ -2553,7 +2555,7 @@ and [<Sealed>] TcImports
             dependencyProvider
         ) =
 
-        node {
+        cancellableTask {
             let ctok = CompilationThreadToken()
             let tcConfig = tcConfigP.Get ctok
 
@@ -2571,7 +2573,7 @@ and [<Sealed>] TcImports
         }
 
     static member BuildTcImports(tcConfigP: TcConfigProvider, dependencyProvider) =
-        node {
+        cancellableTask {
             let ctok = CompilationThreadToken()
             let tcConfig = tcConfigP.Get ctok
 
@@ -2603,7 +2605,7 @@ let RequireReferences (ctok, tcImports: TcImports, tcEnv, thisAssemblyName, reso
 
     let ccuinfos =
         tcImports.RegisterAndImportReferencedAssemblies(ctok, resolutions)
-        |> NodeCode.RunImmediateWithoutCancellation
+        |> CancellableTask.runSynchronouslyWithoutCancellation
 
     let asms =
         ccuinfos

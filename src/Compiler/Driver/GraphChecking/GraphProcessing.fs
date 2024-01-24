@@ -4,6 +4,7 @@ open System.Threading
 open FSharp.Compiler.GraphChecking
 open System.Threading.Tasks
 open System
+open FSharp.Compiler.Facilities.CancellableTasks
 
 /// Information about the node in a graph, describing its relation with other nodes.
 type NodeInfo<'Item> =
@@ -171,9 +172,9 @@ let processGraph<'Item, 'Result when 'Item: equality and 'Item: comparison>
 
 let processGraphAsync<'Item, 'Result when 'Item: equality and 'Item: comparison>
     (graph: Graph<'Item>)
-    (work: ('Item -> ProcessedNode<'Item, 'Result>) -> NodeInfo<'Item> -> Async<'Result>)
-    : Async<('Item * 'Result)[]> =
-    async {
+    (work: ('Item -> ProcessedNode<'Item, 'Result>) -> NodeInfo<'Item> -> CancellableTask<'Result>)
+    : CancellableTask<('Item * 'Result)[]> =
+    cancellableTask {
         let transitiveDeps = graph |> Graph.transitive
         let dependants = graph |> Graph.reverse
         // Cancellation source used to signal either an exception in one of the items or end of processing.

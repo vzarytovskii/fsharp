@@ -2,6 +2,7 @@ namespace Internal.Utilities.Collections
 
 open System.Threading.Tasks
 open FSharp.Compiler.BuildGraph
+open FSharp.Compiler.Facilities.CancellableTasks
 
 [<AutoOpen>]
 module internal Utils =
@@ -63,9 +64,9 @@ type internal AsyncMemoize<'TKey, 'TVersion, 'TValue when 'TKey: equality and 'T
 
     member Clear: predicate: ('TKey -> bool) -> unit
 
-    member Get: key: ICacheKey<'TKey, 'TVersion> * computation: NodeCode<'TValue> -> NodeCode<'TValue>
+    member Get: key: ICacheKey<'TKey, 'TVersion> * computation: CancellableTask<'TValue> -> CancellableTask<'TValue>
 
-    member Get': key: 'TKey * computation: NodeCode<'TValue> -> NodeCode<'TValue>
+    member Get': key: 'TKey * computation: CancellableTask<'TValue> -> CancellableTask<'TValue>
 
     member Event: IEvent<JobEvent * (string * 'TKey * 'TVersion)>
 

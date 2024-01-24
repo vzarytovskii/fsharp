@@ -36,6 +36,7 @@ open FSharp.Compiler.Text
 open FSharp.Compiler.Text.Range
 open FSharp.Compiler.TcGlobals
 open FSharp.Compiler.BuildGraph
+open FSharp.Compiler.Facilities.CancellableTasks
 
 [<RequireQualifiedAccess>]
 type DocumentSource =
@@ -330,13 +331,13 @@ type FSharpChecker
         let userOpName = defaultArg userOpName "Unknown"
 
         backgroundCompiler.GetBackgroundParseResultsForFileInProject(fileName, options, userOpName)
-        |> Async.AwaitNodeCode
+        |> CancellableTask.toAsync
 
     member _.GetBackgroundCheckResultsForFileInProject(fileName, options, ?userOpName: string) =
         let userOpName = defaultArg userOpName "Unknown"
 
         backgroundCompiler.GetBackgroundCheckResultsForFileInProject(fileName, options, userOpName)
-        |> Async.AwaitNodeCode
+        |> CancellableTask.toAsync
 
     /// Try to get recent approximate type check results for a file.
     member _.TryGetRecentCheckResultsForFile(fileName: string, options: FSharpProjectOptions, ?sourceText, ?userOpName: string) =
@@ -395,7 +396,7 @@ type FSharpChecker
         let userOpName = defaultArg userOpName "Unknown"
 
         backgroundCompiler.NotifyFileChanged(fileName, options, userOpName)
-        |> Async.AwaitNodeCode
+        |> CancellableTask.toAsync
 
     /// Typecheck a source code file, returning a handle to the results of the
     /// parse including the reconstructed types in the file.
@@ -418,7 +419,7 @@ type FSharpChecker
             options,
             userOpName
         )
-        |> Async.AwaitNodeCode
+        |> CancellableTask.toAsync
 
     /// Typecheck a source code file, returning a handle to the results of the
     /// parse including the reconstructed types in the file.
@@ -434,7 +435,7 @@ type FSharpChecker
         let userOpName = defaultArg userOpName "Unknown"
 
         backgroundCompiler.CheckFileInProject(parseResults, fileName, fileVersion, sourceText, options, userOpName)
-        |> Async.AwaitNodeCode
+        |> CancellableTask.toAsync
 
     /// Typecheck a source code file, returning a handle to the results of the
     /// parse including the reconstructed types in the file.
@@ -449,25 +450,25 @@ type FSharpChecker
         let userOpName = defaultArg userOpName "Unknown"
 
         backgroundCompiler.ParseAndCheckFileInProject(fileName, fileVersion, sourceText, options, userOpName)
-        |> Async.AwaitNodeCode
+        |> CancellableTask.toAsync
 
     member _.ParseAndCheckFileInProject(fileName: string, projectSnapshot: FSharpProjectSnapshot, ?userOpName: string) =
         let userOpName = defaultArg userOpName "Unknown"
 
         backgroundCompiler.ParseAndCheckFileInProject(fileName, projectSnapshot, userOpName)
-        |> Async.AwaitNodeCode
+        |> CancellableTask.toAsync
 
     member _.ParseAndCheckProject(options: FSharpProjectOptions, ?userOpName: string) =
         let userOpName = defaultArg userOpName "Unknown"
 
         backgroundCompiler.ParseAndCheckProject(options, userOpName)
-        |> Async.AwaitNodeCode
+        |> CancellableTask.toAsync
 
     member _.ParseAndCheckProject(projectSnapshot: FSharpProjectSnapshot, ?userOpName: string) =
         let userOpName = defaultArg userOpName "Unknown"
 
         backgroundCompiler.ParseAndCheckProject(projectSnapshot, userOpName)
-        |> Async.AwaitNodeCode
+        |> CancellableTask.toAsync
 
     member _.FindBackgroundReferencesInFile
         (
@@ -481,7 +482,7 @@ type FSharpChecker
         let canInvalidateProject = defaultArg canInvalidateProject true
         let userOpName = defaultArg userOpName "Unknown"
 
-        node {
+        cancellableTask {
             if fastCheck <> Some true || not captureIdentifiersWhenParsing then
                 return! backgroundCompiler.FindReferencesInFile(fileName, options, symbol, canInvalidateProject, userOpName)
             else
@@ -495,15 +496,14 @@ type FSharpChecker
                 else
                     return Seq.empty
         }
-        |> Async.AwaitNodeCode
+        |> CancellableTask.toAsync
 
     member _.FindBackgroundReferencesInFile(fileName: string, projectSnapshot: FSharpProjectSnapshot, symbol: FSharpSymbol, ?userOpName: string) =
         let userOpName = defaultArg userOpName "Unknown"
 
-        node {
+        cancellableTask {
             let! parseResults =
                 backgroundCompiler.ParseFile(fileName, projectSnapshot, userOpName)
-                |> NodeCode.AwaitAsync
 
             if
                 parseResults.ParseTree.Identifiers |> Set.contains symbol.DisplayNameCore
@@ -513,19 +513,19 @@ type FSharpChecker
             else
                 return Seq.empty
         }
-        |> Async.AwaitNodeCode
+        |> CancellableTask.toAsync
 
     member _.GetBackgroundSemanticClassificationForFile(fileName: string, options: FSharpProjectOptions, ?userOpName) =
         let userOpName = defaultArg userOpName "Unknown"
 
         backgroundCompiler.GetSemanticClassificationForFile(fileName, options, userOpName)
-        |> Async.AwaitNodeCode
+        |> CancellableTask.toAsync
 
     member _.GetBackgroundSemanticClassificationForFile(fileName: string, snapshot: FSharpProjectSnapshot, ?userOpName) =
         let userOpName = defaultArg userOpName "Unknown"
 
         backgroundCompiler.GetSemanticClassificationForFile(fileName, snapshot, userOpName)
-        |> Async.AwaitNodeCode
+        |> CancellableTask.toAsync
 
     /// For a given script file, get the ProjectOptions implied by the #load closure
     member _.GetProjectOptionsFromScript

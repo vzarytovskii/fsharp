@@ -12,6 +12,7 @@ open FSharp.Compiler.BuildGraph
 open FSharp.Compiler.Diagnostics
 open FSharp.Compiler.DiagnosticsLogger
 open System.Runtime.CompilerServices
+open FSharp.Compiler.Facilities.CancellableTasks
 
 [<AutoOpen>]
 module internal Utils =
@@ -50,11 +51,11 @@ type internal MemoizeReply<'TValue> =
     | New of CancellationToken
     | Existing of Task<'TValue>
 
-type internal MemoizeRequest<'TValue> = GetOrCompute of NodeCode<'TValue> * CancellationToken
+type internal MemoizeRequest<'TValue> = GetOrCompute of CancellableTask<'TValue> * CancellationToken
 
 [<DebuggerDisplay("{DebuggerDisplay}")>]
 type internal Job<'TValue> =
-    | Running of TaskCompletionSource<'TValue> * CancellationTokenSource * NodeCode<'TValue> * DateTime * ResizeArray<DiagnosticsLogger>
+    | Running of TaskCompletionSource<'TValue> * CancellationTokenSource * CancellableTask<'TValue> * DateTime * ResizeArray<DiagnosticsLogger>
     | Completed of 'TValue * (PhasedDiagnostic * FSharpDiagnosticSeverity) list
     | Canceled of DateTime
     | Failed of DateTime * exn // TODO: probably we don't need to keep this
@@ -353,7 +354,7 @@ type internal AsyncMemoize<'TKey, 'TVersion, 'TValue when 'TKey: equality and 'T
                                                 DiagnosticsThreadStatics.DiagnosticsLogger <- cachingLogger
 
                                                 try
-                                                    let! result = computation |> Async.AwaitNodeCode
+                                                    let! result = computation
                                                     post (key, (JobCompleted(result, cachingLogger.CapturedDiagnostics)))
                                                     return ()
                                                 finally
@@ -476,40 +477,34 @@ type internal AsyncMemoize<'TKey, 'TVersion, 'TValue when 'TKey: equality and 'T
                 Version = key.GetVersion()
             }
 
-        node {
-            let! ct = NodeCode.CancellationToken
+        cancellableTask {
+            let! ct = CancellableTask.getCancellationToken()
 
             let callerDiagnosticLogger = DiagnosticsThreadStatics.DiagnosticsLogger
 
             match!
                 processRequest post (key, GetOrCompute(computation, ct)) callerDiagnosticLogger
-                |> NodeCode.AwaitTask
             with
             | New internalCt ->
-
                 let linkedCtSource = CancellationTokenSource.CreateLinkedTokenSource(ct, internalCt)
                 let cachingLogger = new CachingDiagnosticsLogger(Some callerDiagnosticLogger)
 
                 try
                     return!
-                        Async.StartAsTask(
-                            async {
-                                // TODO: Should unify starting and restarting
-                                let currentLogger = DiagnosticsThreadStatics.DiagnosticsLogger
-                                DiagnosticsThreadStatics.DiagnosticsLogger <- cachingLogger
+                        cancellableTask {
+                            // TODO: Should unify starting and restarting
+                            let currentLogger = DiagnosticsThreadStatics.DiagnosticsLogger
+                            DiagnosticsThreadStatics.DiagnosticsLogger <- cachingLogger
 
-                                log (Started, key)
+                            log (Started, key)
 
-                                try
-                                    let! result = computation |> Async.AwaitNodeCode
-                                    post (key, (JobCompleted(result, cachingLogger.CapturedDiagnostics)))
-                                    return result
-                                finally
-                                    DiagnosticsThreadStatics.DiagnosticsLogger <- currentLogger
-                            },
-                            cancellationToken = linkedCtSource.Token
-                        )
-                        |> NodeCode.AwaitTask
+                            try
+                                let! result = computation
+                                post (key, (JobCompleted(result, cachingLogger.CapturedDiagnostics)))
+                                return result
+                            finally
+                                DiagnosticsThreadStatics.DiagnosticsLogger <- currentLogger
+                        } |> CancellableTask.start linkedCtSource.Token
                 with
                 | TaskCancelled ex ->
                     // TODO: do we need to do anything else here? Presumably it should be done by the registration on
@@ -525,7 +520,7 @@ type internal AsyncMemoize<'TKey, 'TVersion, 'TValue when 'TKey: equality and 'T
                     post (key, (JobFailed(ex, cachingLogger.CapturedDiagnostics)))
                     return raise ex
 
-            | Existing job -> return! job |> NodeCode.AwaitTask
+            | Existing job -> return! job
 
         }
 

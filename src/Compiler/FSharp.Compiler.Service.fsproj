@@ -161,6 +161,7 @@
     <Compile Include="Facilities\SimulatedMSBuildReferenceResolver.fs" />
     <Compile Include="Facilities\CompilerLocation.fsi" />
     <Compile Include="Facilities\CompilerLocation.fs" />
+    <Compile Include="Facilities\CancellableTask.fs" />
     <Compile Include="Facilities\BuildGraph.fsi" />
     <Compile Include="Facilities\BuildGraph.fs" />
     <Compile Include="Facilities\AsyncMemoize.fsi" />

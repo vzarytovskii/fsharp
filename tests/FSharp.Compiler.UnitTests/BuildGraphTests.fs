@@ -11,18 +11,21 @@ open FSharp.Compiler.BuildGraph
 open Internal.Utilities.Library
 
 module BuildGraphTests =
+    open FSharp.Compiler.Facilities.CancellableTasks
     
     [<MethodImpl(MethodImplOptions.NoInlining)>]
     let private createNode () =
         let o = obj ()
-        GraphNode(node { 
-            Assert.shouldBeTrue (o <> null)
-            return 1 
-        }), WeakReference(o)
+        GraphNode(
+            cancellableTask { 
+                Assert.shouldBeTrue (o <> null)
+                return 1 
+            }
+        ), WeakReference(o)
 
     [<Fact>]
     let ``Intialization of graph node should not have a computed value``() =
-        let node = GraphNode(node { return 1 })
+        let node = GraphNode(CancellableTask.singleton(1))
         Assert.shouldBeTrue(node.TryPeekValue().IsNone)
         Assert.shouldBeFalse(node.HasValue)
 
@@ -32,23 +35,25 @@ module BuildGraphTests =
         let resetEventInAsync = new ManualResetEvent(false)
 
         let graphNode = 
-            GraphNode(node { 
-                resetEventInAsync.Set() |> ignore
-                let! _ = NodeCode.AwaitWaitHandle_ForTesting(resetEvent)
-                return 1 
-            })
+            GraphNode(
+                cancellableTask { 
+                    resetEventInAsync.Set() |> ignore
+                    let! _ = Async.AwaitWaitHandle(resetEvent)
+                    return 1 
+                }
+            )
 
         let task1 =
-            node {
+            cancellableTask {
                 let! _ = graphNode.GetOrComputeValue()
                 ()
-            } |> NodeCode.StartAsTask_ForTesting
+            } |> CancellableTask.startWithoutCancellation
 
         let task2 =
-            node {
+            cancellableTask {
                 let! _ = graphNode.GetOrComputeValue()
                 ()
-            } |> NodeCode.StartAsTask_ForTesting
+            } |> CancellableTask.startWithoutCancellation
 
         resetEventInAsync.WaitOne() |> ignore
         resetEvent.Set() |> ignore
@@ -64,15 +69,17 @@ module BuildGraphTests =
         let requests = 10000
         let mutable computationCount = 0
 
-        let graphNode = 
-            GraphNode(node { 
-                computationCount <- computationCount + 1
-                return 1 
-            })
+        let graphNode =
+            GraphNode(
+                cancellableTask {
+                    computationCount <- computationCount + 1
+                    return 1
+                }
+            )
 
-        let work = Async.Parallel(Array.init requests (fun _ -> graphNode.GetOrComputeValue() |> Async.AwaitNodeCode))
+        let work = CancellableTask.whenAll(Array.init requests (fun _ -> graphNode.GetOrComputeValue()))
 
-        Async.RunImmediate(work)
+        CancellableTask.runSynchronouslyWithoutCancellation work
         |> ignore
 
         Assert.shouldBe 1 computationCount
@@ -81,11 +88,10 @@ module BuildGraphTests =
     let ``Many requests to get a value asynchronously should get the correct value``() =
         let requests = 10000
 
-        let graphNode = GraphNode(node { return 1 })
+        let graphNode = GraphNode(CancellableTask.singleton(1))
 
-        let work = Async.Parallel(Array.init requests (fun _ -> graphNode.GetOrComputeValue() |> Async.AwaitNodeCode))
-
-        let result = Async.RunImmediate(work)
+        let work = CancellableTask.whenAll(Array.init requests (fun _ -> graphNode.GetOrComputeValue()))
+        let result = CancellableTask.runSynchronouslyWithoutCancellation work
 
         Assert.shouldNotBeEmpty result
         Assert.shouldBe requests result.Length
@@ -100,7 +106,8 @@ module BuildGraphTests =
 
         Assert.shouldBeTrue weak.IsAlive
 
-        NodeCode.RunImmediateWithoutCancellation(graphNode.GetOrComputeValue())
+        CancellableTask.runSynchronouslyWithoutCancellation (graphNode.GetOrComputeValue())
+
         |> ignore
 
         GC.Collect(2, GCCollectionMode.Forced, true)
@@ -117,8 +124,7 @@ module BuildGraphTests =
         
         Assert.shouldBeTrue weak.IsAlive
 
-        Async.RunImmediate(Async.Parallel(Array.init requests (fun _ -> graphNode.GetOrComputeValue() |> Async.AwaitNodeCode)))
-        |> ignore
+        CancellableTask.runSynchronouslyWithoutCancellation(CancellableTask.whenAll(Array.init requests (fun _ -> graphNode.GetOrComputeValue()))) |> ignore
 
         GC.Collect(2, GCCollectionMode.Forced, true)
 
@@ -127,21 +133,23 @@ module BuildGraphTests =
     [<Fact>]
     let ``A request can cancel``() =
         let graphNode = 
-            GraphNode(node { 
-                return 1 
-            })
+            GraphNode(
+                cancellableTask { 
+                    return 1 
+                }
+            )
 
         use cts = new CancellationTokenSource()
 
         let work =
-            node {
+            cancellableTask {
                 cts.Cancel()
                 return! graphNode.GetOrComputeValue()
             }
 
         let ex =
             try
-                NodeCode.RunImmediate(work, ct = cts.Token)
+                CancellableTask.runSynchronously cts.Token work
                 |> ignore
                 failwith "Should have canceled"
             with
@@ -155,23 +163,24 @@ module BuildGraphTests =
         let resetEvent = new ManualResetEvent(false)
 
         let graphNode = 
-            GraphNode(node { 
-                let! _ = NodeCode.AwaitWaitHandle_ForTesting(resetEvent)
-                return 1 
-            })
+            GraphNode(
+                cancellableTask { 
+                    let! _ = Async.AwaitWaitHandle(resetEvent)
+                    return 1 
+                }
+            )
 
         use cts = new CancellationTokenSource()
 
         let task =
-            node {
+            cancellableTask {
                 cts.Cancel()
                 resetEvent.Set() |> ignore
-            }
-            |> NodeCode.StartAsTask_ForTesting
+            } |> CancellableTask.startWithoutCancellation
 
         let ex =
             try
-                NodeCode.RunImmediate(graphNode.GetOrComputeValue(), ct = cts.Token)
+                CancellableTask.runSynchronously cts.Token (graphNode.GetOrComputeValue())
                 |> ignore
                 failwith "Should have canceled"
             with
@@ -189,17 +198,19 @@ module BuildGraphTests =
         let mutable computationCount = 0
 
         let graphNode = 
-            GraphNode(node { 
-                computationCountBeforeSleep <- computationCountBeforeSleep + 1
-                let! _ = NodeCode.AwaitWaitHandle_ForTesting(resetEvent)
-                computationCount <- computationCount + 1
-                return 1 
-            })
+            GraphNode(
+                cancellableTask { 
+                    computationCountBeforeSleep <- computationCountBeforeSleep + 1
+                    let! _ = Async.AwaitWaitHandle(resetEvent)
+                    computationCount <- computationCount + 1
+                    return 1 
+                }
+            )
 
         use cts = new CancellationTokenSource()
 
         let work = 
-            node { 
+            cancellableTask { 
                 let! _ = graphNode.GetOrComputeValue()
                 ()
             }
@@ -208,15 +219,16 @@ module BuildGraphTests =
 
         for i = 0 to requests - 1 do
             if i % 10 = 0 then
-                NodeCode.StartAsTask_ForTesting(work, ct = cts.Token)
+                CancellableTask.start cts.Token work
                 |> tasks.Add
             else
-                NodeCode.StartAsTask_ForTesting(work)
+                CancellableTask.startWithoutCancellation work
                 |> tasks.Add
 
         cts.Cancel()
         resetEvent.Set() |> ignore
-        NodeCode.RunImmediateWithoutCancellation(work)
+
+        CancellableTask.runSynchronouslyWithoutCancellation work
         |> ignore
 
         Assert.shouldBeTrue cts.IsCancellationRequested

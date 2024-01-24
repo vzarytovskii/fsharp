@@ -56,6 +56,7 @@ open FSharp.Compiler.TypedTree
 open FSharp.Compiler.TypedTreeOps
 open FSharp.Compiler.XmlDocFileWriter
 open FSharp.Compiler.BuildGraph
+open FSharp.Compiler.Facilities.CancellableTasks
 
 //----------------------------------------------------------------------------
 // Reporting - warnings, errors
@@ -613,7 +614,7 @@ let main1
     // Import basic assemblies
     let tcGlobals, frameworkTcImports =
         TcImports.BuildFrameworkTcImports(foundationalTcConfigP, sysRes, otherRes)
-        |> NodeCode.RunImmediateWithoutCancellation
+        |> CancellableTask.runSynchronouslyWithoutCancellation
 
     let ilSourceDocs =
         [
@@ -662,7 +663,7 @@ let main1
 
     let tcImports =
         TcImports.BuildNonFrameworkTcImports(tcConfigP, frameworkTcImports, otherRes, knownUnresolved, dependencyProvider)
-        |> NodeCode.RunImmediateWithoutCancellation
+        |> CancellableTask.runSynchronouslyWithoutCancellation
 
     // register tcImports to be disposed in future
     disposables.Register tcImports

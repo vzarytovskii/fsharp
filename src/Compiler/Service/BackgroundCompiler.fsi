@@ -7,6 +7,7 @@ open System.Reflection
 open FSharp.Compiler.CodeAnalysis
 open FSharp.Compiler.CompilerConfig
 open FSharp.Compiler.Diagnostics
+open FSharp.Compiler.Facilities.CancellableTasks
 
 type SourceTextHash = int64
 
@@ -32,7 +33,7 @@ type internal IBackgroundCompiler =
         sourceText: ISourceText *
         options: FSharpProjectOptions *
         userOpName: string ->
-            NodeCode<FSharpCheckFileAnswer>
+            CancellableTask<FSharpCheckFileAnswer>
 
     /// Type-check the result obtained by parsing, but only if the antecedent type checking context is available.
     abstract CheckFileInProjectAllowingStaleCachedResults:
@@ -42,7 +43,7 @@ type internal IBackgroundCompiler =
         sourceText: ISourceText *
         options: FSharpProjectOptions *
         userOpName: string ->
-            NodeCode<FSharpCheckFileAnswer option>
+            CancellableTask<FSharpCheckFileAnswer option>
 
     abstract ClearCache: options: FSharpProjectOptions seq * userOpName: string -> unit
 
@@ -57,7 +58,7 @@ type internal IBackgroundCompiler =
         projectSnapshot: FSharpProjectSnapshot *
         symbol: FSharp.Compiler.Symbols.FSharpSymbol *
         userOpName: string ->
-            NodeCode<range seq>
+            CancellableTask<range seq>
 
     abstract FindReferencesInFile:
         fileName: string *
@@ -65,28 +66,28 @@ type internal IBackgroundCompiler =
         symbol: FSharp.Compiler.Symbols.FSharpSymbol *
         canInvalidateProject: bool *
         userOpName: string ->
-            NodeCode<range seq>
+            CancellableTask<range seq>
 
     abstract GetAssemblyData:
         projectSnapshot: FSharpProjectSnapshot * outputFileName: string * userOpName: string ->
-            NodeCode<ProjectAssemblyDataResult>
+            CancellableTask<ProjectAssemblyDataResult>
 
     abstract GetAssemblyData:
         options: FSharpProjectOptions * outputFileName: string * userOpName: string ->
-            NodeCode<ProjectAssemblyDataResult>
+            CancellableTask<ProjectAssemblyDataResult>
 
     /// Fetch the check information from the background compiler (which checks w.r.t. the FileSystem API)
     abstract GetBackgroundCheckResultsForFileInProject:
         fileName: string * options: FSharpProjectOptions * userOpName: string ->
-            NodeCode<FSharpParseFileResults * FSharpCheckFileResults>
+            CancellableTask<FSharpParseFileResults * FSharpCheckFileResults>
 
     /// Fetch the parse information from the background compiler (which checks w.r.t. the FileSystem API)
     abstract GetBackgroundParseResultsForFileInProject:
-        fileName: string * options: FSharpProjectOptions * userOpName: string -> NodeCode<FSharpParseFileResults>
+        fileName: string * options: FSharpProjectOptions * userOpName: string -> CancellableTask<FSharpParseFileResults>
 
     abstract GetCachedCheckFileResult:
         builder: IncrementalBuilder * fileName: string * sourceText: ISourceText * options: FSharpProjectOptions ->
-            NodeCode<(FSharpParseFileResults * FSharpCheckFileResults) option>
+            CancellableTask<(FSharpParseFileResults * FSharpCheckFileResults) option>
 
     abstract GetProjectOptionsFromScript:
         fileName: string *
@@ -104,21 +105,21 @@ type internal IBackgroundCompiler =
 
     abstract GetSemanticClassificationForFile:
         fileName: string * snapshot: FSharpProjectSnapshot * userOpName: string ->
-            NodeCode<FSharp.Compiler.EditorServices.SemanticClassificationView option>
+            CancellableTask<FSharp.Compiler.EditorServices.SemanticClassificationView option>
 
     abstract GetSemanticClassificationForFile:
         fileName: string * options: FSharpProjectOptions * userOpName: string ->
-            NodeCode<FSharp.Compiler.EditorServices.SemanticClassificationView option>
+            CancellableTask<FSharp.Compiler.EditorServices.SemanticClassificationView option>
 
     abstract InvalidateConfiguration: options: FSharpProjectOptions * userOpName: string -> unit
 
-    abstract NotifyFileChanged: fileName: string * options: FSharpProjectOptions * userOpName: string -> NodeCode<unit>
+    abstract NotifyFileChanged: fileName: string * options: FSharpProjectOptions * userOpName: string -> CancellableTask<unit>
 
     abstract NotifyProjectCleaned: options: FSharpProjectOptions * userOpName: string -> Async<unit>
 
     abstract ParseAndCheckFileInProject:
         fileName: string * projectSnapshot: FSharpProjectSnapshot * userOpName: string ->
-            NodeCode<FSharpParseFileResults * FSharpCheckFileAnswer>
+            CancellableTask<FSharpParseFileResults * FSharpCheckFileAnswer>
 
     /// Parses and checks the source file and returns untyped AST and check results.
     abstract ParseAndCheckFileInProject:
@@ -127,14 +128,14 @@ type internal IBackgroundCompiler =
         sourceText: ISourceText *
         options: FSharpProjectOptions *
         userOpName: string ->
-            NodeCode<FSharpParseFileResults * FSharpCheckFileAnswer>
+            CancellableTask<FSharpParseFileResults * FSharpCheckFileAnswer>
 
     abstract ParseAndCheckProject:
-        projectSnapshot: FSharpProjectSnapshot * userOpName: string -> NodeCode<FSharpCheckProjectResults>
+        projectSnapshot: FSharpProjectSnapshot * userOpName: string -> CancellableTask<FSharpCheckProjectResults>
 
     /// Parse and typecheck the whole project.
     abstract ParseAndCheckProject:
-        options: FSharpProjectOptions * userOpName: string -> NodeCode<FSharpCheckProjectResults>
+        options: FSharpProjectOptions * userOpName: string -> CancellableTask<FSharpCheckProjectResults>
 
     abstract ParseFile:
         fileName: string * projectSnapshot: FSharpProjectSnapshot * userOpName: string -> Async<FSharpParseFileResults>

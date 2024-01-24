@@ -20,6 +20,7 @@ open FSharp.Compiler.BuildGraph
 open FSharp.Compiler.IO
 open FSharp.Compiler.Text
 open FSharp.Core.CompilerServices
+open FSharp.Compiler.Facilities.CancellableTasks
 
 #if !NO_TYPEPROVIDERS
 open FSharp.Compiler.TypeProviders
@@ -199,14 +200,14 @@ type TcImports =
     member internal Base: TcImports option
 
     static member BuildFrameworkTcImports:
-        TcConfigProvider * AssemblyResolution list * AssemblyResolution list -> NodeCode<TcGlobals * TcImports>
+        TcConfigProvider * AssemblyResolution list * AssemblyResolution list -> CancellableTask<TcGlobals * TcImports>
 
     static member BuildNonFrameworkTcImports:
         TcConfigProvider * TcImports * AssemblyResolution list * UnresolvedAssemblyReference list * DependencyProvider ->
-            NodeCode<TcImports>
+            CancellableTask<TcImports>
 
     static member BuildTcImports:
-        tcConfigP: TcConfigProvider * dependencyProvider: DependencyProvider -> NodeCode<TcGlobals * TcImports>
+        tcConfigP: TcConfigProvider * dependencyProvider: DependencyProvider -> CancellableTask<TcGlobals * TcImports>
 
 /// Process a group of #r in F# Interactive.
 /// Adds the reference to the tcImports and add the ccu to the type checking environment.

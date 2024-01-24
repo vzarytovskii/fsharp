@@ -2,6 +2,7 @@
 module internal FSharp.Compiler.GraphChecking.GraphProcessing
 
 open System.Threading
+open FSharp.Compiler.Facilities.CancellableTasks
 
 /// Information about the node in a graph, describing its relation with other nodes.
 type NodeInfo<'Item> =
@@ -40,5 +41,5 @@ val processGraph<'Item, 'Result when 'Item: equality and 'Item: comparison> :
 
 val processGraphAsync<'Item, 'Result when 'Item: equality and 'Item: comparison> :
     graph: Graph<'Item> ->
-    work: (('Item -> ProcessedNode<'Item, 'Result>) -> NodeInfo<'Item> -> Async<'Result>) ->
-        Async<('Item * 'Result)[]>
+    work: (('Item -> ProcessedNode<'Item, 'Result>) -> NodeInfo<'Item> -> CancellableTask<'Result>) ->
+        CancellableTask<('Item * 'Result)[]>

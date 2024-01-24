@@ -37,6 +37,7 @@ open FSharp.Compiler.Xml
 open FSharp.Compiler.TypedTree
 open FSharp.Compiler.TypedTreeOps
 open FSharp.Compiler.BuildGraph
+open FSharp.Compiler.Facilities.CancellableTasks
 
 [<AutoOpen>]
 module internal IncrementalBuild =
@@ -136,7 +137,7 @@ module IncrementalBuildSyntaxTree =
             ), sourceRange, fileName, [||]
 
         let parse (source: FSharpSource) =
-            node {
+            cancellableTask {
                 IncrementalBuilderEventTesting.MRU.Add(IncrementalBuilderEventTesting.IBEParsed fileName)
                 use _ =
                     Activity.start "IncrementalBuildSyntaxTree.parse"
@@ -149,9 +150,9 @@ module IncrementalBuildSyntaxTree =
                     let diagnosticsLogger = CompilationDiagnosticLogger("Parse", tcConfig.diagnosticsOptions)
                     // Return the disposable object that cleans up
                     use _holder = new CompilationGlobalsScope(diagnosticsLogger, BuildPhase.Parse)
-                    use! text = source.GetTextContainer() |> NodeCode.AwaitAsync
+                    use! text = source.GetTextContainer()
                     let input =
-                        match text :?> TextContainer with
+                        match text with
                         | TextContainer.Stream(stream) ->
                             ParseOneInputStream(tcConfig, lexResourceManager, fileName, isLastCompiland, diagnosticsLogger, false, stream)
                         | TextContainer.SourceText(sourceText) ->
@@ -252,8 +253,8 @@ type BoundModel private (
         ?tcStateOpt: GraphNode<TcInfo> * GraphNode<TcInfoExtras>
     ) =
 
-    let getTypeCheck (syntaxTree: SyntaxTree) : NodeCode<TypeCheck> =
-        node {
+    let getTypeCheck (syntaxTree: SyntaxTree) : CancellableTask<TypeCheck> =
+        cancellableTask {
             let! input, _sourceRange, fileName, parseErrors = syntaxTree.ParseNode.GetOrComputeValue()
             use _ = Activity.start "BoundModel.TypeCheck" [|Activity.Tags.fileName, fileName|]
 
@@ -263,7 +264,7 @@ type BoundModel private (
             use _ = new CompilationGlobalsScope(diagnosticsLogger, BuildPhase.TypeCheck)
 
             beforeFileChecked.Trigger fileName
-                    
+
             ApplyMetaCommandsFromInputToTcConfig (tcConfig, input, Path.GetDirectoryName fileName, tcImports.DependencyProvider) |> ignore
             let sink = TcResultsSinkImpl(tcGlobals)
             let hadParseErrors = not (Array.isEmpty parseErrors)
@@ -276,8 +277,7 @@ type BoundModel private (
                         tcGlobals,
                         None,
                         TcResultsSink.WithSink sink,
-                        prevTcInfo.tcState, input )
-                |> NodeCode.FromCancellable
+                        prevTcInfo.tcState, input ) |> Cancellable.toAsync
 
             fileChecked.Trigger fileName
 
@@ -322,13 +322,13 @@ type BoundModel private (
         | _ -> None
 
     let getTcInfo (typeCheck: GraphNode<TypeCheck>) =
-        node {
+        cancellableTask {
             let! tcInfo , _, _, _, _ = typeCheck.GetOrComputeValue()
             return tcInfo
         } |> GraphNode
 
     let getTcInfoExtras (typeCheck: GraphNode<TypeCheck>) =
-        node {
+        cancellableTask {
             let! _ , sink, implFile, fileName, _ = typeCheck.GetOrComputeValue()
             // Build symbol keys
             let itemKeyStore, semanticClassification =
@@ -366,17 +366,17 @@ type BoundModel private (
                 }
         } |> GraphNode
 
-    let defaultTypeCheck = node { return prevTcInfo, TcResultsSinkImpl(tcGlobals), None, "default typecheck - no syntaxTree", [||] }
+    let defaultTypeCheck = cancellableTask { return prevTcInfo, TcResultsSinkImpl(tcGlobals), None, "default typecheck - no syntaxTree", [||] }
     let typeCheckNode = syntaxTreeOpt |> Option.map getTypeCheck |> Option.defaultValue defaultTypeCheck |> GraphNode
     let tcInfoExtras = getTcInfoExtras typeCheckNode
     let diagnostics  =
-        node {
+        cancellableTask {
             let! _, _, _, _, diags = typeCheckNode.GetOrComputeValue()
             return diags
         } |> GraphNode
 
     let startComputingFullTypeCheck =
-        node {
+        cancellableTask {
             let! _ = tcInfoExtras.GetOrComputeValue()
             return! diagnostics.GetOrComputeValue()
         }
@@ -390,8 +390,12 @@ type BoundModel private (
                 // For skipped implementation sources do full type check only when requested.
                 GraphNode.FromResult tcInfo, tcInfoExtras
             | _ ->
-                // start computing extras, so that typeCheckNode can be GC'd quickly 
-                startComputingFullTypeCheck |> Async.AwaitNodeCode |> Async.Catch |> Async.Ignore |> Async.Start
+                // start computing extras, so that typeCheckNode can be GC'd quickly
+                startComputingFullTypeCheck
+                |> CancellableTask.catch
+                |> CancellableTask.startWithoutCancellation
+                |> ignore
+
                 getTcInfo typeCheckNode, tcInfoExtras
 
     member val Diagnostics = diagnostics
@@ -417,32 +421,34 @@ type BoundModel private (
     
     member this.GetOrComputeTcInfoExtras = this.TcInfoExtras.GetOrComputeValue
     
-    member this.GetOrComputeTcInfoWithExtras() = node {
-        let! tcInfo = this.TcInfo.GetOrComputeValue()
-        let! tcInfoExtras = this.TcInfoExtras.GetOrComputeValue()
-        return tcInfo, tcInfoExtras
-    }
+    member this.GetOrComputeTcInfoWithExtras() =
+        cancellableTask {
+            let! tcInfo = this.TcInfo.GetOrComputeValue()
+            let! tcInfoExtras = this.TcInfoExtras.GetOrComputeValue()
+            return tcInfo, tcInfoExtras
+        }
 
-    member this.Next(syntaxTree) = node {
-        let! tcInfo = this.TcInfo.GetOrComputeValue()
-        return
-            BoundModel(
-                tcConfig,
-                tcGlobals,
-                tcImports,
-                keepAssemblyContents,
-                keepAllBackgroundResolutions,
-                keepAllBackgroundSymbolUses,
-                enableBackgroundItemKeyStoreAndSemanticClassification,
-                beforeFileChecked,
-                fileChecked,
-                tcInfo,
-                Some syntaxTree
-            )
-    }
+    member this.Next(syntaxTree) = 
+        cancellableTask {
+            let! tcInfo = this.TcInfo.GetOrComputeValue()
+            return
+                BoundModel(
+                    tcConfig,
+                    tcGlobals,
+                    tcImports,
+                    keepAssemblyContents,
+                    keepAllBackgroundResolutions,
+                    keepAllBackgroundSymbolUses,
+                    enableBackgroundItemKeyStoreAndSemanticClassification,
+                    beforeFileChecked,
+                    fileChecked,
+                    tcInfo,
+                    Some syntaxTree
+                )
+        }
 
     member this.Finish(finalTcDiagnosticsRev, finalTopAttribs) =
-        node {
+        cancellableTask {
             let! tcInfo = this.TcInfo.GetOrComputeValue()
             let finishState = { tcInfo with tcDiagnosticsRev = finalTcDiagnosticsRev; topAttribs = finalTopAttribs }
             return
@@ -536,25 +542,27 @@ type FrameworkImportsCache(size) =
                 match frameworkTcImportsCache.TryGet (AnyCallerThread, key) with
                 | Some lazyWork -> lazyWork
                 | None ->
-                    let lazyWork = GraphNode(node {
-                        let tcConfigP = TcConfigProvider.Constant tcConfig
-                        return! TcImports.BuildFrameworkTcImports (tcConfigP, frameworkDLLs, nonFrameworkResolutions)
-                    })
+                    let lazyWork = GraphNode(
+                        cancellableTask {
+                            let tcConfigP = TcConfigProvider.Constant tcConfig
+                            return! TcImports.BuildFrameworkTcImports (tcConfigP, frameworkDLLs, nonFrameworkResolutions)
+                        }
+                    )
                     frameworkTcImportsCache.Put(AnyCallerThread, key, lazyWork)
                     lazyWork
             )
         node
-                
+
 
     /// This function strips the "System" assemblies from the tcConfig and returns a age-cached TcImports for them.
     member this.Get(tcConfig: TcConfig) =
-      node {
-        // Split into installed and not installed.
-        let frameworkDLLs, nonFrameworkResolutions, unresolved = TcAssemblyResolutions.SplitNonFoundationalResolutions(tcConfig)
-        let node = this.GetNode(tcConfig, frameworkDLLs, nonFrameworkResolutions)
-        let! tcGlobals, frameworkTcImports = node.GetOrComputeValue()
-        return tcGlobals, frameworkTcImports, nonFrameworkResolutions, unresolved
-      }
+        cancellableTask {
+            // Split into installed and not installed.
+            let frameworkDLLs, nonFrameworkResolutions, unresolved = TcAssemblyResolutions.SplitNonFoundationalResolutions(tcConfig)
+            let node = this.GetNode(tcConfig, frameworkDLLs, nonFrameworkResolutions)
+            let! tcGlobals, frameworkTcImports = node.GetOrComputeValue()
+            return tcGlobals, frameworkTcImports, nonFrameworkResolutions, unresolved
+        }
 
 /// Represents the interim state of checking an assembly
 [<Sealed>]
@@ -579,13 +587,13 @@ type PartialCheckResults (boundModel: BoundModel, timeStamp: DateTime, projectTi
     member _.GetOrComputeTcInfoWithExtras() = boundModel.GetOrComputeTcInfoWithExtras()
 
     member _.GetOrComputeItemKeyStoreIfEnabled() =
-        node {
+        cancellableTask {
             let! info = boundModel.GetOrComputeTcInfoExtras()
             return info.itemKeyStore
         }
 
     member _.GetOrComputeSemanticClassificationIfEnabled() =
-        node {
+        cancellableTask {
             let! info = boundModel.GetOrComputeTcInfoExtras()
             return info.semanticClassificationKeyStore
         }
@@ -658,14 +666,14 @@ module IncrementalBuilderHelpers =
 #if !NO_TYPEPROVIDERS
         ,importsInvalidatedByTypeProvider: Event<unit>
 #endif
-        ) : NodeCode<BoundModel * SingleFileDiagnostics> =
+        ) : CancellableTask<BoundModel * SingleFileDiagnostics> =
 
-      node {
+      cancellableTask {
         let diagnosticsLogger = CompilationDiagnosticLogger("CombineImportedAssembliesTask", tcConfig.diagnosticsOptions)
         use _ = new CompilationGlobalsScope(diagnosticsLogger, BuildPhase.Parameter)
 
         let! tcImports =
-          node {
+          cancellableTask {
             try
                 let! tcImports = TcImports.BuildNonFrameworkTcImports(tcConfigP, frameworkTcImports, nonFrameworkResolutions, unresolvedReferences, dependencyProvider)
 #if !NO_TYPEPROVIDERS
@@ -736,28 +744,30 @@ module IncrementalBuilderHelpers =
 
     /// Finish up the typechecking to produce outputs for the rest of the compilation process
     let FinalizeTypeCheckTask (tcConfig: TcConfig) tcGlobals partialCheck assemblyName outfile (boundModels: GraphNode<BoundModel> seq) =
-      node {
+      cancellableTask {
         let diagnosticsLogger = CompilationDiagnosticLogger("FinalizeTypeCheckTask", tcConfig.diagnosticsOptions)
         use _ = new CompilationGlobalsScope(diagnosticsLogger, BuildPhase.TypeCheck)
 
-        let! computedBoundModels = boundModels |> Seq.map (fun g -> g.GetOrComputeValue()) |> NodeCode.Sequential
+        let! computedBoundModels = boundModels |> Seq.map (fun g -> g.GetOrComputeValue()) |> CancellableTask.sequential
 
         let! tcInfos =
             computedBoundModels
-            |> Seq.map (fun boundModel -> node { return! boundModel.GetOrComputeTcInfo() })
-            |> NodeCode.Sequential
+            |> Seq.map (fun boundModel -> cancellableTask { return! boundModel.GetOrComputeTcInfo() })
+            |> CancellableTask.sequential
 
         // tcInfoExtras can be computed in parallel. This will check any previously skipped implementation files in parallel, too.
         let! latestImplFiles =
             computedBoundModels
-            |> Seq.map (fun boundModel -> node {
+            |> Seq.map (fun boundModel ->
+                cancellableTask {
                     if partialCheck then
                         return None
                     else
                         let! tcInfoExtras = boundModel.GetOrComputeTcInfoExtras()
                         return tcInfoExtras.latestImplFile
-                })
-            |> NodeCode.Parallel
+                }
+            )
+            |> CancellableTask.whenAll
 
         let results = [
             for tcInfo, latestImplFile in Seq.zip tcInfos latestImplFiles ->
@@ -826,7 +836,7 @@ module IncrementalBuilderHelpers =
         let! partialDiagnostics =
             computedBoundModels
             |> Seq.map (fun m -> m.Diagnostics.GetOrComputeValue())
-            |> NodeCode.Parallel
+            |> CancellableTask.whenAll
         let diagnostics = [
             diagnosticsLogger.GetDiagnostics()
             yield! partialDiagnostics |> Seq.rev
@@ -949,24 +959,28 @@ module IncrementalBuilderStateHelpers =
     type BuildStatus = Invalidated | Good
 
     let createBoundModelGraphNode (prevBoundModel: GraphNode<BoundModel>) syntaxTree =
-        GraphNode(node {
-            let! prevBoundModel = prevBoundModel.GetOrComputeValue()
-            return! prevBoundModel.Next(syntaxTree)
-        })
+        GraphNode(
+            cancellableTask {
+                let! prevBoundModel = prevBoundModel.GetOrComputeValue()
+                return! prevBoundModel.Next(syntaxTree)
+            }
+        )
 
     let createFinalizeBoundModelGraphNode (initialState: IncrementalBuilderInitialState) (boundModels: GraphNode<BoundModel> seq) =
-        GraphNode(node {
-            use _ = Activity.start "GetCheckResultsAndImplementationsForProject" [|Activity.Tags.project, initialState.outfile|]
-            let! result = 
-                FinalizeTypeCheckTask 
-                    initialState.tcConfig 
-                    initialState.tcGlobals
-                    initialState.enablePartialTypeChecking
-                    initialState.assemblyName 
-                    initialState.outfile 
-                    boundModels
-            return result, DateTime.UtcNow
-        })
+        GraphNode(
+            cancellableTask {
+                use _ = Activity.start "GetCheckResultsAndImplementationsForProject" [|Activity.Tags.project, initialState.outfile|]
+                let! result = 
+                    FinalizeTypeCheckTask 
+                        initialState.tcConfig 
+                        initialState.tcGlobals
+                        initialState.enablePartialTypeChecking
+                        initialState.assemblyName 
+                        initialState.outfile 
+                        boundModels
+                return result, DateTime.UtcNow
+            }
+        )
 
     let computeStampedFileNames (initialState: IncrementalBuilderInitialState) (state: IncrementalBuilderState) (cache: TimeStampCache) =
         let slots = 
@@ -1123,13 +1137,13 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
             tryGetSlot state (slot - 1)
 
     let evalUpToTargetSlot (state: IncrementalBuilderState) targetSlot =
-        node {
-            if targetSlot < 0 then
-                return Some(initialBoundModel, defaultTimeStamp)
-            else
+        if targetSlot < 0 then
+            CancellableTask.singleton(Some(initialBoundModel, defaultTimeStamp))
+        else
+            cancellableTask {
                 let! boundModel = state.boundModels[targetSlot].GetOrComputeValue()
                 return Some(boundModel, state.stampedFileNames[targetSlot])
-        }
+            }
 
     let MaxTimeStampInDependencies stamps fileSlot =
         if Seq.isEmpty stamps then
@@ -1155,8 +1169,8 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
     let mutable currentState = state 
 
     let setCurrentState state cache (ct: CancellationToken) =
-        node {
-            do! semaphore.WaitAsync(ct) |> NodeCode.AwaitTask
+        cancellableTask {
+            do! semaphore.WaitAsync(ct)
             try
                 ct.ThrowIfCancellationRequested()
                 currentState <- computeStampedFileNames initialState state cache
@@ -1165,8 +1179,8 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
         }
 
     let checkFileTimeStamps (cache: TimeStampCache) =
-        node {
-            let! ct = NodeCode.CancellationToken
+        cancellableTask {
+            let! ct = CancellableTask.getCancellationToken()
             do! setCurrentState currentState cache ct
         }
 
@@ -1196,12 +1210,12 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
     member _.AllDependenciesDeprecated = allDependencies
 
     member _.PopulatePartialCheckingResults () =
-      node {
-        let cache = TimeStampCache defaultTimeStamp // One per step
-        do! checkFileTimeStamps cache
-        let! _ = currentState.finalizedBoundModel.GetOrComputeValue()
-        projectChecked.Trigger()
-      }
+        cancellableTask {
+            let cache = TimeStampCache defaultTimeStamp // One per step
+            do! checkFileTimeStamps cache
+            let! _ = currentState.finalizedBoundModel.GetOrComputeValue()
+            projectChecked.Trigger()
+        }
 
     member builder.GetCheckResultsBeforeFileInProjectEvenIfStale fileName: PartialCheckResults option  =
         let slotOfFile = builder.GetSlotOfFileName fileName
@@ -1238,29 +1252,31 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
         (builder.TryGetCheckResultsBeforeFileInProject fileName).IsSome
 
     member builder.GetCheckResultsBeforeSlotInProject slotOfFile =
-      node {
-        let cache = TimeStampCache defaultTimeStamp
-        do! checkFileTimeStamps cache
-        let! result = evalUpToTargetSlot currentState (slotOfFile - 1)
-        match result with
-        | Some (boundModel, timestamp) ->
-            let projectTimeStamp = builder.GetLogicalTimeStampForFileInProject(slotOfFile)
-            return PartialCheckResults(boundModel, timestamp, projectTimeStamp)
-        | None -> return! failwith "Expected results to be ready. (GetCheckResultsBeforeSlotInProject)."
-      }
+        cancellableTask {
+            let cache = TimeStampCache defaultTimeStamp
+            do! checkFileTimeStamps cache
+            let! result = evalUpToTargetSlot currentState (slotOfFile - 1)
+            match result with
+            | Some (boundModel, timestamp) ->
+                let projectTimeStamp = builder.GetLogicalTimeStampForFileInProject(slotOfFile)
+                return PartialCheckResults(boundModel, timestamp, projectTimeStamp)
+            | None ->
+                return failwith "Expected results to be ready. (GetCheckResultsBeforeSlotInProject)."
+        }
 
     member builder.GetFullCheckResultsBeforeSlotInProject slotOfFile =
-      node {
-        let cache = TimeStampCache defaultTimeStamp
-        do! checkFileTimeStamps cache
-        let! result = evalUpToTargetSlot currentState (slotOfFile - 1)
-        match result with
-        | Some (boundModel, timestamp) -> 
-            let! _ = boundModel.GetOrComputeTcInfoExtras()
-            let projectTimeStamp = builder.GetLogicalTimeStampForFileInProject(slotOfFile)
-            return PartialCheckResults(boundModel, timestamp, projectTimeStamp)
-        | None -> return! failwith "Expected results to be ready. (GetFullCheckResultsBeforeSlotInProject)."
-      }
+        cancellableTask {
+            let cache = TimeStampCache defaultTimeStamp
+            do! checkFileTimeStamps cache
+            let! result = evalUpToTargetSlot currentState (slotOfFile - 1)
+            match result with
+            | Some (boundModel, timestamp) -> 
+                let! _ = boundModel.GetOrComputeTcInfoExtras()
+                let projectTimeStamp = builder.GetLogicalTimeStampForFileInProject(slotOfFile)
+                return PartialCheckResults(boundModel, timestamp, projectTimeStamp)
+            | None -> 
+                return failwith "Expected results to be ready. (GetFullCheckResultsBeforeSlotInProject)."
+        }
 
     member builder.GetCheckResultsBeforeFileInProject fileName =
         let slotOfFile = builder.GetSlotOfFileName fileName
@@ -1275,7 +1291,7 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
         builder.GetFullCheckResultsBeforeSlotInProject slotOfFile
 
     member builder.GetFullCheckResultsAfterFileInProject fileName =
-        node {
+        cancellableTask {
             let slotOfFile = builder.GetSlotOfFileName fileName + 1
             let! result = builder.GetFullCheckResultsBeforeSlotInProject(slotOfFile)
             return result
@@ -1285,7 +1301,7 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
         builder.GetCheckResultsBeforeSlotInProject(builder.GetSlotsCount())
 
     member builder.GetCheckResultsAndImplementationsForProject() =
-      node {
+      cancellableTask {
         let cache = TimeStampCache(defaultTimeStamp)
         do! checkFileTimeStamps cache
         let! result = currentState.finalizedBoundModel.GetOrComputeValue()
@@ -1297,7 +1313,7 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
       }
 
     member builder.GetFullCheckResultsAndImplementationsForProject() =
-        node {
+        cancellableTask {
             let! result = builder.GetCheckResultsAndImplementationsForProject()
             let results, _, _, _ = result
             let! _ = results.GetOrComputeTcInfoWithExtras() // Make sure we forcefully evaluate the info
@@ -1342,14 +1358,13 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
         let slotOfFile = builder.GetSlotOfFileName fileName
         let syntaxTree = currentState.slots[slotOfFile].SyntaxTree
         syntaxTree.ParseNode.GetOrComputeValue()
-        |> Async.AwaitNodeCode
-        |> Async.RunSynchronously
+        |> CancellableTask.runSynchronouslyWithoutCancellation
 
     member builder.NotifyFileChanged(fileName, timeStamp) =
-        node {
+        cancellableTask {
             let slotOfFile = builder.GetSlotOfFileName fileName        
             let cache = TimeStampCache defaultTimeStamp
-            let! ct = NodeCode.CancellationToken
+            let! ct = CancellableTask.getCancellationToken()
             do! setCurrentState
                     { currentState with 
                         slots = currentState.slots |> List.updateAt slotOfFile (currentState.slots[slotOfFile].Notify timeStamp) }
@@ -1388,14 +1403,14 @@ type IncrementalBuilder(initialState: IncrementalBuilderInitialState, state: Inc
 
       let useSimpleResolutionSwitch = "--simpleresolution"
 
-      node {
+      cancellableTask {
 
         // Trap and report diagnostics from creation.
         let delayedLogger = CapturingDiagnosticsLogger("IncrementalBuilderCreation")
         use _ = new CompilationGlobalsScope(delayedLogger, BuildPhase.Parameter)
 
         let! builderOpt =
-         node {
+         cancellableTask {
           try
 
             // Create the builder.

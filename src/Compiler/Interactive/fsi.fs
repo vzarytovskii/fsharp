@@ -3214,6 +3214,7 @@ type internal FsiInterruptController
 //----------------------------------------------------------------------------
 
 #nowarn "40"
+open FSharp.Compiler.Facilities.CancellableTasks
 
 // From http://msdn.microsoft.com/en-us/library/ff527268.aspx
 // What the Event Handler Does
@@ -4594,7 +4595,7 @@ type FsiEvaluationSession
             let tcConfig = tcConfigP.Get(ctokStartup)
 
             checker.FrameworkImportsCache.Get tcConfig
-            |> NodeCode.RunImmediateWithoutCancellation
+            |> CancellableTask.runSynchronouslyWithoutCancellation
         with e ->
             stopProcessingRecovery e range0
             failwithf "Error creating evaluation session: %A" e
@@ -4608,7 +4609,7 @@ type FsiEvaluationSession
                 unresolvedReferences,
                 fsiOptions.DependencyProvider
             )
-            |> NodeCode.RunImmediateWithoutCancellation
+            |> CancellableTask.runSynchronouslyWithoutCancellation
         with e ->
             stopProcessingRecovery e range0
             failwithf "Error creating evaluation session: %A" e

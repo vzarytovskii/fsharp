@@ -643,7 +643,7 @@ module CancellableTasks =
                 when Awaiter<'Awaiter, 'TResult1>>
                 ([<InlineIfLambda>] getAwaiter: CancellationToken -> 'Awaiter)
                 : CancellableTaskCode<_, _> =
-                this.Bind(getAwaiter, this.Return)
+                this.Bind(getAwaiter, fun v -> this.Return v)
 
             [<NoEagerConstraintApplication>]
             member inline this.ReturnFrom<'TResult1, 'TResult2, 'Awaiter, 'TOverall when Awaiter<'Awaiter, 'TResult1>> (getAwaiter: 'Awaiter) : CancellableTaskCode<_, _> =

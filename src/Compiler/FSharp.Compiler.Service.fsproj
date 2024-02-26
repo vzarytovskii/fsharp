@@ -109,7 +109,6 @@
     <Compile Include="Utilities\TaggedCollections.fs" />
     <Compile Include="Utilities\illib.fsi" />
     <Compile Include="Utilities\illib.fs" />
-    <Compile Include="Utilities\Cancellable.fsi" />
     <Compile Include="Utilities\Cancellable.fs" />
     <Compile Include="Utilities\FileSystem.fsi" />
     <Compile Include="Utilities\FileSystem.fs" />

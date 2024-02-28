@@ -32,12 +32,12 @@ type CancellableCode<'TOverall, 'T> = ResumableCode<CancellableStateMachineData<
 type CancellableBuilder() =
 
     [<DefaultValue>]
-    member inline _.Zero() : CancellableCode<'TOverall, unit> = ResumableCode.Zero()
+    member inline _.Zero<'TOverall>() : CancellableCode<'TOverall, unit> = ResumableCode.Zero()
 
-    member inline _.Combine(cancellable1: CancellableCode<'TOverall, unit>, cancellable2: CancellableCode<'TOverall, 'T>) : CancellableCode<'TOverall, 'T> =
+    member inline _.Combine<'TOverall, 'T>(cancellable1: CancellableCode<'TOverall, unit>, cancellable2: CancellableCode<'TOverall, 'T>) : CancellableCode<'TOverall, 'T> =
         ResumableCode.Combine(cancellable1, cancellable2)
 
-    member inline _.Delay([<InlineIfLambda>] f: unit -> CancellableCode<'TOverall, 'T>) : CancellableCode<'TOverall, 'T> =
+    member inline _.Delay<'TOverall, 'T>([<InlineIfLambda>] f: unit -> CancellableCode<'TOverall, 'T>) : CancellableCode<'TOverall, 'T> =
         ResumableCode.Delay(fun () ->
             CancellableCode(fun sm ->
                 if sm.Data.IsCancellationRequested() then
@@ -46,7 +46,8 @@ type CancellableBuilder() =
                 else
                     (f ()).Invoke(&sm)))
 
-    member inline _.Return(value: 'T) : CancellableCode<'T, 'T> =
+    [<NoEagerConstraintApplication>]
+    member inline _.Return<'T>(value: 'T) : CancellableCode<'T, 'T> =
         CancellableCode<'T, _>(fun sm ->
             if sm.Data.IsCancellationRequested() then
                 sm.Data.Result <- ValueOrCancelled.Cancelled(OperationCanceledException sm.Data.CancellationToken)
@@ -55,8 +56,19 @@ type CancellableBuilder() =
             true
         )
 
-    member inline _.Bind<'T>(f: Cancellable<'T>, continuation: 'T -> CancellableCode<'T, 'T>) : CancellableCode<'T, 'T> =
-        CancellableCode<'T, _>(fun sm ->
+    [<NoEagerConstraintApplication>]
+    member inline _.ReturnFrom<'T1, 'T2, 'TOverall>([<InlineIfLambda>] value: Cancellable<'T1>) : CancellableCode<_, _> =
+        CancellableCode<_, _>(fun sm ->
+            if sm.Data.IsCancellationRequested() then
+                sm.Data.Result <- ValueOrCancelled.Cancelled(OperationCanceledException sm.Data.CancellationToken)
+            else
+                sm.Data.Result <- value sm.Data.CancellationToken
+            true
+        )
+
+    [<NoEagerConstraintApplication>]
+    member inline _.Bind<'T1, 'T2, 'TOverall>([<InlineIfLambda>] f: Cancellable<'T1>, [<InlineIfLambda>] continuation: 'T1 -> CancellableCode<'TOverall, 'T2>) : CancellableCode<'TOverall, 'T2> =
+        CancellableCode<'TOverall, _>(fun sm ->
             if sm.Data.IsCancellationRequested() then
                 sm.Data.Result <- ValueOrCancelled.Cancelled(OperationCanceledException sm.Data.CancellationToken)
                 true
@@ -69,9 +81,9 @@ type CancellableBuilder() =
                 | ValueOrCancelled.Value(v) -> (continuation v).Invoke(&sm)
         )
 
-    member inline _.TryWith(computation: CancellableCode<'TOverall, 'T>, [<InlineIfLambda>] catchHandler: Exception -> CancellableCode<'TOverall, 'T>) : CancellableCode<'TOverall, 'T> =
+    member inline _.TryWith<'TOverall, 'T>([<InlineIfLambda>] computation: CancellableCode<'TOverall, 'T>, [<InlineIfLambda>] catchHandler: Exception -> CancellableCode<'TOverall, 'T>) : CancellableCode<'TOverall, 'T> =
         ResumableCode.TryWith(
-            CancellableCode(fun sm ->
+            CancellableCode<'TOverall, _>(fun sm ->
                 if sm.Data.IsCancellationRequested() then
                     sm.Data.Result <- ValueOrCancelled.Cancelled(OperationCanceledException sm.Data.CancellationToken)
                     true

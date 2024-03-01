@@ -89,8 +89,8 @@ type DelayedILModuleReader =
             cancellable {
                 let! ct = Cancellable.token ()
 
-                return
-                    lock this.gate (fun () ->
+                let result =
+                    lock this.gate <| fun () ->
                         // see if we have a result or not after the lock so we do not evaluate the stream more than once
                         match box this.result with
                         | null ->
@@ -115,9 +115,10 @@ type DelayedILModuleReader =
                             with ex ->
                                 Trace.TraceInformation("FCS: Unable to get an ILModuleReader: {0}", ex)
                                 None
-                        | _ -> Some this.result)
+                        | _ -> Some this.result
+                return result
             }
-        | _ -> cancellable.Return(Some this.result)
+        | _ -> cancellable { return Some this.result }
 
 [<RequireQualifiedAccess; NoComparison; CustomEquality>]
 type FSharpReferencedProject =

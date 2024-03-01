@@ -5302,7 +5302,8 @@ let rec TcModuleOrNamespaceElementNonMutRec (cenv: cenv) parent typeNames scopem
  }
  
 /// The non-mutually recursive case for a sequence of declarations
-and TcModuleOrNamespaceElementsNonMutRec cenv parent typeNames endm (defsSoFar, env, envAtEnd) (moreDefs: SynModuleDecl list) =
+and TcModuleOrNamespaceElementsNonMutRec cenv parent typeNames endm (defsSoFar, env, envAtEnd) (moreDefs: SynModuleDecl list)
+    : Cancellable<list<ModuleOrNamespaceContents list * (unit -> unit) list * (AttributeTargets * Attrib) list> * TcEnv> =
  cancellable {
     match moreDefs with 
     | firstDef :: otherDefs ->

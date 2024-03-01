@@ -57,8 +57,8 @@ type CancellableBuilder() =
         )
 
     [<NoEagerConstraintApplication>]
-    member inline _.ReturnFrom<'T1, 'T2, 'TOverall>([<InlineIfLambda>] value: Cancellable<'T1>) : CancellableCode<_, _> =
-        CancellableCode<_, _>(fun sm ->
+    member inline _.ReturnFrom<'T1, 'T2>([<InlineIfLambda>] value: Cancellable<'T1>) : CancellableCode<'T1, 'T2> =
+        CancellableCode<'T1, 'T2>(fun sm ->
             if sm.Data.IsCancellationRequested() then
                 sm.Data.Result <- ValueOrCancelled.Cancelled(OperationCanceledException sm.Data.CancellationToken)
             else
@@ -68,7 +68,7 @@ type CancellableBuilder() =
 
     [<NoEagerConstraintApplication>]
     member inline _.Bind<'T1, 'T2, 'TOverall>([<InlineIfLambda>] f: Cancellable<'T1>, [<InlineIfLambda>] continuation: 'T1 -> CancellableCode<'TOverall, 'T2>) : CancellableCode<'TOverall, 'T2> =
-        CancellableCode<'TOverall, _>(fun sm ->
+        CancellableCode<'TOverall, 'T2>(fun sm ->
             if sm.Data.IsCancellationRequested() then
                 sm.Data.Result <- ValueOrCancelled.Cancelled(OperationCanceledException sm.Data.CancellationToken)
                 true
@@ -91,6 +91,19 @@ type CancellableBuilder() =
                     (computation).Invoke(&sm)
             ),
             catchHandler
+        )
+
+    member inline _.Using<'Resource, 'TOverall, 'T when 'Resource :> IDisposable> (resource: 'Resource, [<InlineIfLambda>] binder: 'Resource -> CancellableCode<'TOverall, 'T>) =
+        ResumableCode.Using(
+            resource,
+            fun resource ->
+                CancellableCode<'TOverall, 'T>(fun sm ->
+                    if sm.Data.IsCancellationRequested() then
+                        sm.Data.Result <- ValueOrCancelled.Cancelled(OperationCanceledException sm.Data.CancellationToken)
+                        true
+                    else
+                        (binder resource).Invoke(&sm)
+                )
         )
 
     member inline _.Run(code: CancellableCode<'T, 'T>) : Cancellable<'T> =
@@ -116,7 +129,7 @@ type CancellableBuilder() =
                             sm.Data.Result
                         ))
         else
-            failwith "TODO: Run"
+            failwith "TODO: Non-resumable code run"
 
     (*
     member inline _.Bind<'T, 'TResult, 'TOverall>([<InlineIfLambda>] cancellable: Cancellable<'T>, [<InlineIfLambda>] continuation: ValueOrCancelled<'T> -> CancellableCode<'TOverall, 'TResult>) : CancellableCode<'TOverall, 'TResult> =
@@ -198,6 +211,11 @@ type Cancellable =
         | [] -> CancellationToken.None
         | token :: _ -> token
 
+    static member CheckAndThrow() =
+        match Cancellable.Tokens with
+        | [] -> ()
+        | token :: _ -> token.ThrowIfCancellationRequested()
+
 module Cancellable =
     let inline run (ct: CancellationToken) ([<InlineIfLambda>] cancellable) =
         if ct.IsCancellationRequested then
@@ -224,6 +242,20 @@ module Cancellable =
         match run CancellationToken.None cancellable with
         | ValueOrCancelled.Cancelled _ -> failwith "unexpected cancellation"
         | ValueOrCancelled.Value r -> r
+
+    let toAsync c =
+        async {
+            let! ct = Async.CancellationToken
+            let res = run ct c
+
+            return!
+                Async.FromContinuations(fun (cont, _econt, ccont) ->
+                    match res with
+                    | ValueOrCancelled.Value v -> cont v
+                    | ValueOrCancelled.Cancelled ce -> ccont ce)
+        }
+
+    let inline token () = ValueOrCancelled.Value
 
 
 (*

@@ -1,0 +1,19 @@
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
+  <Metadata>
+    <Identity Id="FSharp.VisualStudio.Extension.4fd40904-7bdd-40b0-82ab-588cbee624d1" Version="8.0.400.0" Language="en-US" Publisher="Publisher name" />
+    <DisplayName>FSharp.VisualStudio.Extension</DisplayName>
+    <Description>Extension description</Description>
+    <Preview>true</Preview>
+  </Metadata>
+  <Installation ExtensionType="VSSDK+VisualStudio.Extensibility">
+    <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.10,18.0)">
+      <ProductArchitecture>amd64</ProductArchitecture>
+    </InstallationTarget>
+    <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.10,18.0)">
+      <ProductArchitecture>arm64</ProductArchitecture>
+    </InstallationTarget>
+  </Installation>
+  <Prerequisites>
+    <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[17.10,)" DisplayName="Visual Studio core editor" />
+  </Prerequisites>
+</PackageManifest>

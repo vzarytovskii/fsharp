@@ -1,7 +1,7 @@
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
     <Metadata>
-        <Identity Id="FSharp.VisualStudio.Extension.Full" Version="8.0.400.0" Language="en-US" Publisher="Microsoft" />
-        <DisplayName>FSharp.VisualStudio.Extension.Full</DisplayName>
+        <Identity Id="FSharp.VisualStudio.Extension.LanguageConfiguration" Version="8.0.400.0" Language="en-US" Publisher="Microsoft" />
+        <DisplayName>F# language configuration for Visual Studio</DisplayName>
         <Description>none</Description>
         <Preview>true</Preview>
     </Metadata>
@@ -17,7 +17,7 @@
 		<Dependency Id="Microsoft.Framework.NDP" DisplayName="Microsoft .NET Framework" Source="Manual" Version="[4.7.2,)" />
 	</Dependencies>
 	<Assets>
-		<Asset Type="Microsoft.VisualStudio.VsPackage" Path="FSharp.VisualStudio.Extension.Full.pkgdef" />
+		<Asset Type="Microsoft.VisualStudio.VsPackage" Path="FSharp.VisualStudio.Extension.LanguageConfiguration.pkgdef" />
 	</Assets>
   <Prerequisites>
     <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[17.10,)" DisplayName="Visual Studio core editor" />

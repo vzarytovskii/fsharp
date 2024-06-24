@@ -150,6 +150,7 @@ internal class FSharpLanguageServerProvider : LanguageServerProvider
     {
         FileExtensions = [".fs", ".fsi", ".fsx"],
         BaseDocumentType = LanguageServerBaseDocumentType,
+
     };
 
     /// <inheritdoc/>

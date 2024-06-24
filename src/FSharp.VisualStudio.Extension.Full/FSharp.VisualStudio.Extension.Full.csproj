@@ -3,21 +3,35 @@
 	<PropertyGroup>
 		<TargetFramework>net472</TargetFramework>
 		<VssdkCompatibleExtension>true</VssdkCompatibleExtension>
+		<GeneratePkgDefFile>false</GeneratePkgDefFile>
+		<LangVersion>12</LangVersion>
+		<NoWarn>VSEXT0004</NoWarn>
 	</PropertyGroup>
 	<ItemGroup>
+		<PackageReference Include="Microsoft.VisualStudio.Extensibility" Version="17.10.2059-preview-3-g914e66a9d4" />
+		<PackageReference Include="Microsoft.VisualStudio.Extensibility.Sdk" Version="17.10.2059-preview-3-g914e66a9d4" />
 		<PackageReference Include="Microsoft.VisualStudio.Extensibility.Build" Version="17.10.2059-preview-3-g914e66a9d4" />
 	</ItemGroup>
-	<ItemGroup>
+	<!--<ItemGroup>
 		<ProjectReference Include="..\FSharp.VisualStudio.Extension\FSharp.VisualStudio.Extension.csproj">
-	     <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
-	     <SetTargetFramework>TargetFramework=net8.0-windows</SetTargetFramework>
+			<ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+			<SetTargetFramework>TargetFramework=net8.0-windows</SetTargetFramework>
 			<IncludeInVSIX>true</IncludeInVSIX>
 			<IncludeOutputGroupsInVSIX>DeploymentAssetsOutputGroup</IncludeOutputGroupsInVSIX>
 		</ProjectReference>
-	</ItemGroup>
+	</ItemGroup>-->
 	<ItemGroup>
 		<None Include="source.extension.vsixmanifest">
 			<SubType>Designer</SubType>
 		</None>
+		<Content Include="Grammars\*">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<IncludeInVSIX>true</IncludeInVSIX>
+			<VSIXSubPath>Grammars\</VSIXSubPath>
+		</Content>
+		<Content Include="language-configuration.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<IncludeInVSIX>true</IncludeInVSIX>
+		</Content>
 	</ItemGroup>
 </Project>

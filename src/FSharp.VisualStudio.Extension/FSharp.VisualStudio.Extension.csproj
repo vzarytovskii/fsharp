@@ -4,8 +4,8 @@
     <Nullable>enable</Nullable>
 	<LangVersion>12</LangVersion>
     <NeutralLanguage>en-US</NeutralLanguage>
-    <!-- The VisualStudio.Extensibility preview packages are available from the azure-public/vside/msft_consumption feed -->
-
+	<NoWarn>VSEXT0004</NoWarn>
+	 <!-- The VisualStudio.Extensibility preview packages are available from the azure-public/vside/msft_consumption feed -->
   </PropertyGroup>
 
   <ItemGroup>

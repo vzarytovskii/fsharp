@@ -1,6 +1,6 @@
 {
   "name": "fsharp",
-  "scopeName": "source.fsharp.fs",
+  "scopeName": "source.fsharp",
   "fileTypes": [
     "fs"
   ],

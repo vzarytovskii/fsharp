@@ -1,13 +1,11 @@
 [$RootKey$\TextMate\Repositories]
 "FSharp"="$PackageFolder$\Grammars"
-"F#"="$PackageFolder$\Grammars"
 
 [$RootKey$\TextMate\LanguageConfiguration\ContentTypeMapping]
 "FSharp"="$PackageFolder$\language-configuration.json"
-"F#"="$PackageFolder$\language-configuration.json"
 
 [$RootKey$\TextMate\LanguageConfiguration\GrammarMapping]
-"source.fsharp.fs"="$PackageFolder$\language-configuration.json"
+"source.fsharp"="$PackageFolder$\language-configuration.json"
 "source.fsharp.fsi"="$PackageFolder$\language-configuration.json"
 "source.fsharp.fsl"="$PackageFolder$\language-configuration.json"
 "source.fsharp.fsx"="$PackageFolder$\language-configuration.json"

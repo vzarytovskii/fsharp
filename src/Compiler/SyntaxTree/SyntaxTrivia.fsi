@@ -129,6 +129,8 @@ type SynExprDotLambdaTrivia =
 [<NoEquality; NoComparison>]
 type SynExprLetOrUseTrivia =
     {
+        /// The syntax range of the `let` or `use` keyword.
+        LetOrUseKeyword: range
         /// The syntax range of the `in` keyword.
         InKeyword: range option
     }
@@ -519,6 +521,10 @@ type SynMemberDefnAbstractSlotTrivia =
     }
 
     static member Zero: SynMemberDefnAbstractSlotTrivia
+
+/// Represents additional information for SynMemberDefn.Inherit
+[<NoEquality; NoComparison>]
+type SynMemberDefnInheritTrivia = { InheritKeyword: range }
 
 /// Represents additional information for SynField
 [<NoEquality; NoComparison>]
